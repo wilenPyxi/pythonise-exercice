@@ -1,0 +1,18 @@
+# Dépendances de DÉPLOIEMENT (slim) — pour Hugging Face Spaces / conteneur.
+# Différence avec requirements.txt : on retire torch / sentence-transformers /
+# langchain-huggingface (≈ 1 Go, inutiles avec l'embedding par défaut
+# openai-3-small qui passe par l'API). On ajoute gunicorn (serveur WSGI).
+flask>=3.0,<4.0
+gunicorn>=21.0
+python-dotenv>=1.0
+requests>=2.31
+openai>=1.40
+langchain-core>=0.3
+langchain-community>=0.3
+langchain-openai>=0.2
+faiss-cpu>=1.8
+pandas>=2.0
+openpyxl>=3.1
+sympy>=1.12
+numpy>=1.26
+matplotlib>=3.8

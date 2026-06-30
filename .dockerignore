@@ -1,0 +1,14 @@
+# Ne JAMAIS embarquer les secrets ni le venv dans l'image.
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+tests/
+
+# Caches FAISS inutiles en déploiement (embeddings locaux non utilisés).
+# On GARDE uniquement openai-3-small (défaut, ~1,2 Mo).
+data/faiss_cache/sources/codesearch-distilroberta/
+data/faiss_cache/sources/mpnet-multilingual/
+data/faiss_cache/sources/openai-3-large/

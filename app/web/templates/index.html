@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Pythonise Exercice — v2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg:            #f7f7f8;
+    --panel:         #ffffff;
+    --panel-alt:     #fafafb;
+    --panel-hover:   #f4f4f5;
+    --border:        #e4e4e7;
+    --border-soft:   #eeeef0;
+    --border-strong: #d4d4d8;
+    --text:          #09090b;
+    --text-2:        #27272a;
+    --text-muted:    #71717a;
+    --text-soft:     #a1a1aa;
+    --primary:       #18181b;
+    --primary-hover: #27272a;
+    --primary-fg:    #fafafa;
+    --accent:        #2563eb;
+    --success:       #16a34a;
+    --success-bg:    #f0fdf4;
+    --success-border:#bbf7d0;
+    --error:         #dc2626;
+    --error-bg:      #fef2f2;
+    --error-border:  #fecaca;
+    --warn:          #ca8a04;
+    --warn-bg:       #fefce8;
+    --sans: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif;
+    --mono: 'Geist Mono', 'JetBrains Mono', "SF Mono", Menlo, monospace;
+    --radius:        10px;
+    --radius-sm:     6px;
+    --radius-xs:     4px;
+    --shadow-xs:     0 1px 2px rgba(9, 9, 11, 0.04);
+    --shadow-sm:     0 1px 2px rgba(9, 9, 11, 0.04), 0 2px 8px rgba(9, 9, 11, 0.03);
+    --shadow-focus:  0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 1320px; margin: 0 auto; padding: 40px 32px 56px; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-bottom: 28px; padding-bottom: 24px;
+    border-bottom: 1px solid var(--border-soft); flex-wrap: wrap;
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .header-mark {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: var(--primary); color: var(--primary-fg);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 500; font-size: 13px;
+  }
+  .header-text h1 { margin: 0 0 2px; font-size: 17px; font-weight: 600; }
+  .header-text p { margin: 0; color: var(--text-muted); font-size: 13px; }
+  .header-status {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 12px;
+    color: var(--text-muted); font-weight: 500; padding: 6px 12px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+  }
+  .header-status .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+  }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-sm);
+    padding: 24px; display: flex; flex-direction: column; min-width: 0;
+  }
+  .panel-title {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    margin: 0 0 16px; letter-spacing: 0.08em; text-transform: uppercase;
+  }
+
+  .field { margin-bottom: 14px; }
+  .field-label {
+    display: block; font-size: 12px; font-weight: 500; color: var(--text-2);
+    margin-bottom: 6px;
+  }
+  textarea, input[type="text"], select {
+    width: 100%; background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px; font-family: inherit;
+    font-size: 13px; line-height: 1.55; color: var(--text);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  textarea {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.6;
+    height: 320px; resize: vertical; min-height: 160px;
+  }
+  textarea:focus, input[type="text"]:focus, select:focus {
+    outline: none; border-color: var(--accent); box-shadow: var(--shadow-focus);
+  }
+  select {
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%2371717a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 5 L6 8 L9 5'/></svg>");
+    background-repeat: no-repeat; background-position: right 10px center;
+    background-size: 12px; padding-right: 32px; cursor: pointer; font-weight: 500;
+  }
+
+  .meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px 14px; margin: 18px 0 20px; }
+  .meta-full { grid-column: 1 / -1; }
+
+  .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
+    border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-family: inherit;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: all 0.15s ease; box-shadow: var(--shadow-xs);
+  }
+  .btn:hover:not(:disabled) { background: var(--panel-hover); border-color: var(--border-strong); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn--primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
+  .btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
+  .btn--ghost { background: transparent; border-color: transparent; color: var(--text-muted); box-shadow: none; padding: 7px 12px; }
+  .btn--ghost:hover:not(:disabled) { background: var(--panel-hover); color: var(--text); }
+  .btn--small { padding: 5px 11px; font-size: 12px; }
+
+  /* Batch file list */
+  .filelist { list-style: none; padding: 0; margin: 10px 0 0; }
+  .filelist li {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--text-2);
+    padding: 5px 8px; border: 1px solid var(--border-soft);
+    border-radius: var(--radius-xs); margin-bottom: 4px; background: var(--panel-alt);
+  }
+  .filelist .rm { margin-left: auto; cursor: pointer; color: var(--text-soft); border: none; background: none; font-size: 13px; }
+  .filelist .rm:hover { color: var(--error); }
+
+  .progress { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
+  .progress-line { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
+  .progress-spinner {
+    width: 12px; height: 12px; border: 1.5px solid var(--border-strong);
+    border-top-color: var(--text); border-radius: 50%;
+    animation: spin 0.7s linear infinite; flex-shrink: 0;
+  }
+  .progress-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .progress-step {
+    font-family: var(--mono); font-size: 11px; color: var(--text-muted);
+    padding: 2px 7px; background: var(--bg); border: 1px solid var(--border-soft);
+    border-radius: var(--radius-xs); white-space: nowrap;
+  }
+  .progress-bar { margin-top: 10px; height: 3px; background: var(--border-soft); border-radius: 3px; overflow: hidden; position: relative; }
+  .progress-bar-fill { position: absolute; inset: 0; background: var(--text); transform: translateX(-100%); border-radius: 3px; }
+  .progress.is-running .progress-bar-fill { animation: slide 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+  .progress.is-done .progress-bar-fill { transform: translateX(0); background: var(--success); }
+  .progress.is-error .progress-bar-fill { transform: translateX(0); background: var(--error); }
+  .progress.is-idle .progress-spinner, .progress.is-done .progress-spinner, .progress.is-error .progress-spinner { display: none; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slide {
+    0%   { transform: translateX(-100%) scaleX(0.35); }
+    50%  { transform: translateX(0%)    scaleX(0.65); }
+    100% { transform: translateX(100%)  scaleX(0.35); }
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .status {
+    margin-top: 12px; padding: 10px 14px; border-radius: var(--radius-sm);
+    font-size: 13px; border: 1px solid transparent; animation: fadeIn 0.2s ease-out;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .status.is-error { background: var(--error-bg); border-color: var(--error-border); color: #991b1b; }
+  .status.is-error::before { background: var(--error); }
+  .status.is-done { background: var(--success-bg); border-color: var(--success-border); color: #166534; }
+  .status.is-done::before { background: var(--success); }
+  .status.is-warn { background: var(--warn-bg); border-color: #fde68a; color: #854d0e; }
+  .status.is-warn::before { background: var(--warn); }
+
+  /* Résumé batch + sélecteur de fichier résultat */
+  .result-files { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .result-file {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11.5px; padding: 4px 10px;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--panel); cursor: pointer; color: var(--text-2);
+  }
+  .result-file.is-active { border-color: var(--text); background: var(--panel-hover); }
+  .verdict-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .verdict-dot.ok  { background: var(--success); }
+  .verdict-dot.ko  { background: var(--error); }
+  .verdict-dot.err { background: var(--warn); }
+
+  .tabs {
+    display: flex; align-items: center; gap: 2px; margin-bottom: 14px;
+    padding: 4px; background: var(--bg); border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm); flex-wrap: wrap;
+  }
+  .tab {
+    background: transparent; border: none; padding: 6px 12px; font-family: inherit;
+    font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: pointer;
+    border-radius: var(--radius-xs); transition: all 0.15s ease;
+  }
+  .tab.is-active { color: var(--text); background: var(--panel); box-shadow: var(--shadow-xs); }
+  .tab-badge {
+    display: inline-block; margin-left: 5px; padding: 0 6px; min-width: 18px;
+    height: 16px; font-size: 10px; font-family: var(--mono); font-weight: 500;
+    background: var(--text); color: var(--primary-fg); border-radius: 8px;
+    line-height: 16px; text-align: center; vertical-align: 1px;
+  }
+  .tab-spacer { flex: 1; }
+  .tab-panels { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .tab-panel.is-active { display: flex; animation: fadeIn 0.18s ease-out; }
+
+  .output {
+    background: var(--panel-alt); border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm); padding: 16px 18px; margin: 0;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    color: var(--text-2); min-height: 380px; max-height: 620px;
+    overflow: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .output .empty { color: var(--text-soft); font-family: var(--sans); font-size: 13px; }
+  .output--audit { font-family: var(--sans); font-size: 13px; line-height: 1.6; white-space: normal; color: var(--text); }
+
+  .output::-webkit-scrollbar { width: 10px; height: 10px; }
+  .output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; border: 2px solid var(--panel-alt); }
+
+  .audit-section + .audit-section { margin-top: 24px; }
+  .audit-heading {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .audit-heading .count {
+    color: var(--text-soft); font-weight: 500; font-family: var(--mono);
+    font-size: 10px; padding: 1px 6px; background: var(--bg); border-radius: 999px;
+  }
+  .audit-list { list-style: none; padding: 0; margin: 0; }
+  .audit-patch { padding: 14px 0; border-top: 1px solid var(--border-soft); }
+  .audit-patch:first-child { border-top: none; padding-top: 0; }
+  .audit-rule {
+    display: inline-flex; font-family: var(--mono); font-size: 11px; font-weight: 500;
+    color: var(--text-2); background: var(--bg); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: var(--radius-xs); margin-bottom: 10px;
+  }
+  .audit-diff { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .audit-before, .audit-after {
+    font-family: var(--mono); font-size: 12px; padding: 10px 12px; margin: 0;
+    border-radius: var(--radius-xs); white-space: pre-wrap; line-height: 1.55;
+    border-left: 2px solid;
+  }
+  .audit-before { background: var(--error-bg); border-left-color: var(--error); color: #991b1b; text-decoration: line-through; }
+  .audit-after { background: var(--success-bg); border-left-color: var(--success); color: #166534; }
+  .audit-warnings { list-style: none; padding: 0; margin: 0; }
+  .audit-warnings li {
+    padding: 10px 0 10px 18px; border-top: 1px solid var(--border-soft);
+    position: relative; color: var(--text-2); font-size: 13px;
+  }
+  .audit-warnings li:first-child { border-top: none; }
+  .audit-warnings li::before {
+    content: ''; position: absolute; left: 0; top: 17px; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(202, 138, 4, 0.15);
+  }
+  .audit-warnings .rule-ref {
+    display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 500;
+    color: var(--text-muted); background: var(--bg); padding: 1px 6px;
+    border-radius: var(--radius-xs); margin-right: 6px;
+  }
+
+  /* Bandeau verdict + coût */
+  .meta-result {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    margin: 0 0 12px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid;
+  }
+  .pill--ok { color: #166534; background: var(--success-bg); border-color: var(--success-border); }
+  .pill--ko { color: #991b1b; background: var(--error-bg); border-color: var(--error-border); }
+  .pill--info { color: var(--text-2); background: var(--bg); border-color: var(--border); font-weight: 500; font-family: var(--mono); font-size: 11.5px; }
+
+  .token.comment { color: #9ca3af; font-style: italic; }
+  .token.keyword, .token.boolean, .token.important { color: #9333ea; font-weight: 500; }
+  .token.string, .token.attr-value { color: #15803d; }
+  .token.function, .token.class-name { color: #1d4ed8; }
+  .token.number, .token.constant { color: #c2410c; }
+  .token.operator, .token.punctuation { color: #52525b; }
+  .token.title, .token.heading { font-weight: 600; color: var(--text); }
+
+  .footer {
+    margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border-soft);
+    text-align: center; font-size: 12px; color: var(--text-soft);
+  }
+  .footer code {
+    font-family: var(--mono); font-size: 11px; padding: 1px 6px;
+    background: var(--panel); border: 1px solid var(--border-soft);
+    border-radius: var(--radius-xs); color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header class="header">
+    <div class="header-left">
+      <div class="header-mark">Py</div>
+      <div class="header-text">
+        <h1>Pythonise Exercice</h1>
+        <p>PyxiScience MyST → version pythonisée · validée au harnais</p>
+      </div>
+    </div>
+    <div class="header-status"><span class="dot"></span> service actif</div>
+  </header>
+
+  <div class="grid">
+
+    <!-- INPUT PANEL -->
+    <section class="panel">
+      <h2 class="panel-title">Source</h2>
+
+      <div class="field">
+        <textarea id="input" placeholder="Collez ici l'énoncé MyST à pythoniser… (ou chargez un/des fichiers .md ci-dessous)"></textarea>
+      </div>
+
+      <ul class="filelist" id="filelist" hidden></ul>
+
+      <div class="meta">
+        <div>
+          <label class="field-label" for="model-select">Modèle</label>
+          <select id="model-select" aria-label="Modèle LLM"></select>
+        </div>
+        <div>
+          <label class="field-label" for="lang-select">Langue cible</label>
+          <select id="lang-select">
+            <option value="fr">Français</option>
+            <option value="en">Anglais</option>
+            <option value="both">Les deux (bilingue)</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="level">Niveau</label>
+          <select id="level">
+            <option value="">—</option>
+            <option value="Intermediate">Intermédiaire</option>
+            <option value="Advanced">Avancé</option>
+          </select>
+        </div>
+        <div class="meta-full">
+          <label class="field-label" for="filename">Nom du fichier <span style="opacity:0.6;font-weight:400">(si saisie manuelle)</span></label>
+          <input type="text" id="filename" value="exercise.md" placeholder="exercise.md">
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn--primary" id="run-btn" type="button" onclick="run()">Lancer la pythonisation</button>
+        <button class="btn" type="button" onclick="document.getElementById('file-input').click()">Charger des fichiers .md</button>
+        <input type="file" id="file-input" accept=".md,.txt,text/markdown,text/plain" multiple hidden onchange="loadFiles(event)">
+        <button class="btn btn--ghost" type="button" onclick="clearAll()">Effacer</button>
+      </div>
+
+      <div class="progress is-idle" id="progress">
+        <div class="progress-line">
+          <span class="progress-spinner"></span>
+          <span class="progress-label" id="step-label">En attente</span>
+          <span class="progress-step" id="step-counter">—</span>
+        </div>
+        <div class="progress-bar"><span class="progress-bar-fill"></span></div>
+      </div>
+
+      <div id="status" class="status" hidden></div>
+    </section>
+
+    <!-- OUTPUT PANEL -->
+    <section class="panel">
+      <h2 class="panel-title">Résultat</h2>
+
+      <div class="result-files" id="result-files" hidden></div>
+      <div class="meta-result" id="meta-result" hidden></div>
+
+      <nav class="tabs" id="tabs">
+        <button class="tab is-active" type="button" data-tab="exercice">Exercice</button>
+        <button class="tab" type="button" data-tab="audit">Audit<span class="tab-badge" id="audit-badge" hidden>0</span></button>
+        <button class="tab" type="button" data-tab="analysis">Analyse</button>
+        <button class="tab" type="button" data-tab="notions">Notions</button>
+        <span class="tab-spacer"></span>
+        <button class="btn btn--ghost btn--small" id="dl-btn" type="button" onclick="downloadActiveMd()" disabled>Télécharger .md</button>
+        <button class="btn btn--ghost btn--small" id="dlzip-btn" type="button" onclick="downloadZip()" hidden>Tout (.zip)</button>
+        <button class="btn btn--ghost btn--small" id="copy-btn" type="button" onclick="copyActive()" disabled>Copier</button>
+      </nav>
+
+      <div class="tab-panels">
+        <div class="tab-panel is-active" id="panel-exercice">
+          <pre class="output" id="output-exercice"><code class="empty language-markdown">L'exercice pythonisé apparaîtra ici.</code></pre>
+        </div>
+        <div class="tab-panel" id="panel-audit">
+          <div class="output output--audit" id="output-audit"><p class="empty">Aucun audit pour le moment.</p></div>
+        </div>
+        <div class="tab-panel" id="panel-analysis">
+          <pre class="output" id="output-analysis"><code class="empty language-json">{}</code></pre>
+        </div>
+        <div class="tab-panel" id="panel-notions">
+          <pre class="output" id="output-notions"><code class="empty">—</code></pre>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="footer">
+    <code>v2</code> · Pythonisation PyxiScience · porte harnais déterministe · OpenRouter
+  </footer>
+
+</div>
+
+<script src="https://unpkg.com/prismjs@1.29.0/components/prism-core.min.js"></script>
+<script src="https://unpkg.com/prismjs@1.29.0/components/prism-markup.min.js"></script>
+<script src="https://unpkg.com/prismjs@1.29.0/components/prism-python.min.js"></script>
+<script src="https://unpkg.com/prismjs@1.29.0/components/prism-json.min.js"></script>
+<script src="https://unpkg.com/prismjs@1.29.0/components/prism-markdown.min.js"></script>
+
+<script>
+'use strict';
+
+const POLL_MS = 1000;
+let currentJobId = null;
+let pollTimer = null;
+let activeTab = "exercice";
+let loadedFiles = [];        // [{filename, content}]
+let jobResults = [];         // résultats par fichier
+let activeResultIdx = 0;
+
+document.addEventListener("DOMContentLoaded", () => { fetchModels(); bindTabs(); });
+
+async function fetchModels() {
+  try {
+    const res = await fetch("/api/models");
+    if (!res.ok) return;
+    const { models, default_idx, default_lang } = await res.json();
+    const sel = document.getElementById("model-select");
+    sel.innerHTML = "";
+    for (const [idx, slug] of Object.entries(models).sort((a, b) => Number(a[0]) - Number(b[0]))) {
+      const opt = document.createElement("option");
+      opt.value = idx;
+      opt.textContent = prettyModelName(slug);
+      if (Number(idx) === default_idx) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    if (default_lang) document.getElementById("lang-select").value = default_lang;
+  } catch (e) { console.warn("/api/models:", e); }
+}
+
+function prettyModelName(slug) {
+  const [, name = slug] = slug.split("/");
+  return name
+    .replace(/^claude-/, "Claude ").replace(/^gpt-/, "GPT-")
+    .replace(/^gemini-/, "Gemini ").replace(/-/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase()).replace(/Gpt/g, "GPT");
+}
+
+/* ─── Tabs ─── */
+function bindTabs() {
+  document.querySelectorAll("#tabs .tab").forEach(btn => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
+}
+function switchTab(name) {
+  activeTab = name;
+  document.querySelectorAll("#tabs .tab").forEach(btn =>
+    btn.classList.toggle("is-active", btn.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach(panel =>
+    panel.classList.toggle("is-active", panel.id === `panel-${name}`));
+  updateCopyState();
+}
+function activeDoneResult() {
+  const e = jobResults[activeResultIdx];
+  return (e && e.status === "done" && e.result) ? e : null;
+}
+
+function updateCopyState() {
+  // Copier (panneau actif)
+  const text = currentPanelText();
+  document.getElementById("copy-btn").disabled =
+    !text || !text.trim() || text.trim() === "—" || text.trim() === "{}";
+  // Télécharger .md (résultat affiché)
+  const r = activeDoneResult();
+  const dl = document.getElementById("dl-btn");
+  if (dl) dl.disabled = !(r && r.result.exercise);
+  // Tout (.zip) — seulement en batch (≥ 2 fichiers prêts)
+  const doneCount = jobResults.filter(x => x.status === "done").length;
+  const zip = document.getElementById("dlzip-btn");
+  if (zip) zip.hidden = !(doneCount >= 2 && currentJobId);
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadActiveMd() {
+  const r = activeDoneResult();
+  if (!r || !r.result.exercise) return;
+  const base = (r.filename || "exercice").replace(/\.(md|txt)$/i, "");
+  triggerDownload(
+    new Blob([r.result.exercise], { type: "text/markdown;charset=utf-8" }),
+    base + "_pythonise.md"
+  );
+}
+
+function downloadZip() {
+  if (!currentJobId) return;
+  const a = document.createElement("a");
+  a.href = `/api/jobs/${currentJobId}/download`;
+  a.download = "";   // nom fixé par le serveur (Content-Disposition)
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function currentPanelText() {
+  const map = { exercice: "output-exercice", audit: "output-audit",
+                analysis: "output-analysis", notions: "output-notions" };
+  const el = document.getElementById(map[activeTab]);
+  if (!el) return "";
+  if (activeTab === "audit") return el.innerText || "";
+  const code = el.querySelector("code");
+  return code ? code.textContent : (el.textContent || "");
+}
+
+/* ─── Progress + status ─── */
+function setProgress(state, label, step) {
+  const prog = document.getElementById("progress");
+  prog.classList.remove("is-idle", "is-running", "is-done", "is-error");
+  prog.classList.add(`is-${state}`);
+  if (label !== undefined) document.getElementById("step-label").textContent = label;
+  if (step !== undefined) document.getElementById("step-counter").textContent = step;
+}
+function setStatus(state, text) {
+  const el = document.getElementById("status");
+  el.className = "status" + (state ? ` is-${state}` : "");
+  el.textContent = text;
+  el.hidden = false;
+}
+function hideStatus() { document.getElementById("status").hidden = true; }
+
+/* ─── Fichiers (batch) ─── */
+function loadFiles(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  let pending = files.length;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      loadedFiles.push({ filename: file.name, content: String(e.target.result || "") });
+      if (--pending === 0) renderFileList();
+    };
+    reader.onerror = () => { if (--pending === 0) renderFileList(); };
+    reader.readAsText(file, "UTF-8");
+  });
+  event.target.value = "";
+}
+function renderFileList() {
+  const ul = document.getElementById("filelist");
+  ul.innerHTML = "";
+  ul.hidden = loadedFiles.length === 0;
+  loadedFiles.forEach((f, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `📄 ${escapeHtml(f.filename)} <span style="color:var(--text-soft)">(${(f.content.length / 1024).toFixed(1)} ko)</span>
+      <button class="rm" title="Retirer" onclick="removeFile(${i})">✕</button>`;
+    ul.appendChild(li);
+  });
+}
+function removeFile(i) { loadedFiles.splice(i, 1); renderFileList(); }
+
+/* ─── Rendu des sorties ─── */
+function setExerciseOutput(text) {
+  const pre = document.getElementById("output-exercice");
+  pre.innerHTML = "";
+  const code = document.createElement("code");
+  code.className = "language-markdown";
+  if (!text) { code.classList.add("empty"); code.textContent = "L'exercice pythonisé apparaîtra ici."; }
+  else { code.textContent = text; if (window.Prism) Prism.highlightElement(code); }
+  pre.appendChild(code);
+  updateCopyState();
+}
+function setAnalysisOutput(obj) {
+  const pre = document.getElementById("output-analysis");
+  pre.innerHTML = "";
+  const code = document.createElement("code");
+  code.className = "language-json";
+  if (!obj) { code.classList.add("empty"); code.textContent = "{}"; }
+  else { code.textContent = JSON.stringify(obj, null, 2); if (window.Prism) Prism.highlightElement(code); }
+  pre.appendChild(code);
+}
+function setNotionsOutput(text) {
+  const pre = document.getElementById("output-notions");
+  pre.innerHTML = "";
+  const code = document.createElement("code");
+  if (!text || text === "—") { code.classList.add("empty"); code.textContent = "—"; }
+  else { code.textContent = text; }
+  pre.appendChild(code);
+}
+function setAuditOutput(result) {
+  const container = document.getElementById("output-audit");
+  const patches = result.audit_patches || [];
+  const warnings = result.warnings || [];
+  const badge = document.getElementById("audit-badge");
+  if (!patches.length && !warnings.length) {
+    container.innerHTML = `<p class="empty">Aucun patch ni warning — l'audit a validé l'exercice.</p>`;
+    badge.hidden = true;
+    return;
+  }
+  badge.hidden = false;
+  badge.textContent = String(patches.length + warnings.length);
+  let html = "";
+  if (patches.length) {
+    html += `<section class="audit-section"><h3 class="audit-heading">Patches appliqués <span class="count">${patches.length}</span></h3><ul class="audit-list">`;
+    for (const p of patches) {
+      html += `<li class="audit-patch">
+        <span class="audit-rule">règle ${escapeHtml(p.rule || "?")}</span>
+        <div class="audit-diff">
+          <pre class="audit-before"><code>${escapeHtml(p.location || "")}</code></pre>
+          <pre class="audit-after"><code>${escapeHtml(p.fix || "")}</code></pre>
+        </div></li>`;
+    }
+    html += `</ul></section>`;
+  }
+  if (warnings.length) {
+    html += `<section class="audit-section"><h3 class="audit-heading">Warnings <span class="count">${warnings.length}</span></h3><ul class="audit-warnings">`;
+    for (const w of warnings) {
+      let ruleRef = "", txt = w;
+      if (typeof w === "object" && w !== null) {
+        if (w.rule) ruleRef = `<span class="rule-ref">règle ${escapeHtml(w.rule)}</span>`;
+        txt = w.message || JSON.stringify(w);
+      }
+      html += `<li>${ruleRef}${escapeHtml(String(txt))}</li>`;
+    }
+    html += `</ul></section>`;
+  }
+  container.innerHTML = html;
+}
+
+/* Bandeau verdict + coût + langue pour le fichier affiché */
+function setMetaResult(entry) {
+  const el = document.getElementById("meta-result");
+  if (!entry) { el.hidden = true; return; }
+  el.hidden = false;
+  if (entry.status === "error") {
+    el.innerHTML = `<span class="pill pill--ko">✗ Erreur pipeline</span>
+                    <span class="pill pill--info">${escapeHtml(entry.error || "")}</span>`;
+    return;
+  }
+  const r = entry.result;
+  const h = r.harness || {};
+  const verdict = h.ok
+    ? `<span class="pill pill--ok">✓ Harnais VERT (${h.seeds} graines)</span>`
+    : `<span class="pill pill--ko">✗ Harnais ROUGE (${h.seeds} graines)</span>`;
+  const cost = r.cost ? `<span class="pill pill--info">${r.cost.usd.toFixed(4)} $ · ${r.cost.requests} appels</span>` : "";
+  const lang = r.lang ? `<span class="pill pill--info">langue : ${escapeHtml(r.lang.source)} → ${escapeHtml(r.lang.target)} (${escapeHtml(r.lang.action)})</span>` : "";
+  const dur = r.duration_s ? `<span class="pill pill--info">${r.duration_s}s</span>` : "";
+  el.innerHTML = verdict + cost + lang + dur;
+}
+
+/* Sélecteur de fichier (batch) */
+function renderResultFiles() {
+  const el = document.getElementById("result-files");
+  if (jobResults.length <= 1) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = "";
+  jobResults.forEach((r, i) => {
+    const cls = r.status === "error" ? "err" : (r.result?.harness?.ok ? "ok" : "ko");
+    const span = document.createElement("span");
+    span.className = "result-file" + (i === activeResultIdx ? " is-active" : "");
+    span.innerHTML = `<span class="verdict-dot ${cls}"></span>${escapeHtml(r.filename)}`;
+    span.onclick = () => { activeResultIdx = i; showResult(i); renderResultFiles(); };
+    el.appendChild(span);
+  });
+}
+function showResult(i) {
+  const entry = jobResults[i];
+  if (!entry) return;
+  setMetaResult(entry);
+  if (entry.status === "error") {
+    setExerciseOutput(""); setAnalysisOutput(null); setNotionsOutput(""); setAuditOutput({});
+    return;
+  }
+  const r = entry.result;
+  setExerciseOutput(r.exercise || "");
+  setAnalysisOutput(r.analysis || null);
+  setNotionsOutput(r.notions || "—");
+  setAuditOutput(r);
+}
+
+/* ─── Run + poll ─── */
+async function run() {
+  let files = loadedFiles.slice();
+  const manual = document.getElementById("input").value.trim();
+  if (!files.length && manual) {
+    files = [{ filename: document.getElementById("filename").value.trim() || "exercise.md",
+               content: manual }];
+  }
+  if (!files.length) { setStatus("error", "Saisissez un énoncé ou chargez des fichiers .md."); return; }
+
+  const payload = {
+    files,
+    level: document.getElementById("level").value,
+    lang: document.getElementById("lang-select").value,
+    model_idx: Number(document.getElementById("model-select").value || 0),
+  };
+
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  currentJobId = null;
+  jobResults = []; activeResultIdx = 0;
+  document.getElementById("run-btn").disabled = true;
+  hideStatus();
+  setExerciseOutput(""); setAnalysisOutput(null); setNotionsOutput(""); setAuditOutput({});
+  setMetaResult(null);
+  document.getElementById("result-files").hidden = true;
+  document.getElementById("audit-badge").hidden = true;
+  switchTab("exercice");
+  setProgress("running", "Soumission du job…", "0/" + files.length);
+
+  try {
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    currentJobId = (await res.json()).job_id;
+    poll();
+  } catch (e) {
+    setProgress("error", "Échec", "—");
+    setStatus("error", "Erreur : " + e.message);
+    document.getElementById("run-btn").disabled = false;
+  }
+}
+
+async function poll() {
+  if (!currentJobId) return;
+  try {
+    const res = await fetch(`/api/jobs/${currentJobId}`);
+    const data = await res.json();
+    jobResults = data.results || [];
+    if (data.status === "running") {
+      setProgress("running", data.step_label || "…", `${data.files_done}/${data.files_total}`);
+      // Affiche au fil de l'eau le dernier fichier terminé.
+      if (jobResults.length && activeResultIdx < jobResults.length) {
+        renderResultFiles(); showResult(Math.min(activeResultIdx, jobResults.length - 1));
+      }
+      pollTimer = setTimeout(poll, POLL_MS);
+    } else if (data.status === "done") {
+      const s = data.summary || {};
+      setProgress(s.rouges || s.erreurs ? "error" : "done", "Terminé", `${data.files_done}/${data.files_total}`);
+      const msg = `Terminé : ${s.verts ?? 0} VERT(S), ${s.rouges ?? 0} ROUGE(S), ${s.erreurs ?? 0} erreur(s) · ${s.cost_usd ?? 0} $`;
+      setStatus(s.rouges || s.erreurs ? "warn" : "done", msg);
+      activeResultIdx = 0;
+      renderResultFiles();
+      showResult(0);
+      document.getElementById("run-btn").disabled = false;
+    } else if (data.status === "error") {
+      setProgress("error", "Erreur", "—");
+      setStatus("error", "Erreur : " + (data.error || "inconnue"));
+      document.getElementById("run-btn").disabled = false;
+    }
+  } catch (e) {
+    setProgress("error", "Erreur de polling", "—");
+    setStatus("error", "Erreur de polling : " + e.message);
+    document.getElementById("run-btn").disabled = false;
+  }
+}
+
+function clearAll() {
+  if (pollTimer) clearTimeout(pollTimer);
+  currentJobId = null;
+  loadedFiles = []; jobResults = []; activeResultIdx = 0;
+  renderFileList();
+  document.getElementById("input").value = "";
+  setExerciseOutput(""); setAnalysisOutput(null); setNotionsOutput(""); setAuditOutput({});
+  setMetaResult(null);
+  document.getElementById("result-files").hidden = true;
+  document.getElementById("audit-badge").hidden = true;
+  setProgress("idle", "En attente", "—");
+  hideStatus();
+  document.getElementById("run-btn").disabled = false;
+}
+
+function copyActive() {
+  const text = currentPanelText();
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("copy-btn");
+    const old = btn.textContent;
+    btn.textContent = "Copié";
+    setTimeout(() => { btn.textContent = old; }, 1400);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+</script>
+
+</body>
+</html>
