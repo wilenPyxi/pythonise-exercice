@@ -440,8 +440,10 @@
 'use strict';
 
 const POLL_MS = 1000;
+const POLL_MAX_FAILURES = 12;   // hoquets transitoires tolérés avant d'abandonner le suivi
 let currentJobId = null;
 let pollTimer = null;
+let pollFailures = 0;
 let activeTab = "exercice";
 let loadedFiles = [];        // [{filename, content}]
 let jobResults = [];         // résultats par fichier
@@ -727,6 +729,7 @@ async function run() {
 
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   currentJobId = null;
+  pollFailures = 0;
   jobResults = []; activeResultIdx = 0;
   document.getElementById("run-btn").disabled = true;
   hideStatus();
@@ -759,12 +762,27 @@ async function run() {
 async function poll() {
   if (!currentJobId) return;
   try {
-    const res = await fetch(`/api/jobs/${currentJobId}`);
-    const data = await res.json();
+    const res = await fetch(`/api/jobs/${currentJobId}`, { headers: { "Accept": "application/json" } });
+    // Lire en texte d'abord : sous forte charge, le proxy HF peut renvoyer une
+    // page HTML (502/504) au lieu du JSON → on traite ça comme un hoquet
+    // transitoire et on RÉESSAIE, au lieu de tuer tout le suivi.
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (_) { throw new Error(`réponse non-JSON (HTTP ${res.status})`); }
+
+    if (res.status === 404) {
+      // Job inconnu : le serveur a probablement redémarré (perte du suivi en mémoire).
+      setProgress("error", "Suivi perdu", "—");
+      setStatus("error", "Le serveur a perdu ce job (redémarrage). Le traitement est interrompu — relance.");
+      document.getElementById("run-btn").disabled = false;
+      return;
+    }
+
+    pollFailures = 0;                 // réponse valide → on repart à zéro
     jobResults = data.results || [];
     if (data.status === "running") {
       setProgress("running", data.step_label || "…", `${data.files_done}/${data.files_total}`);
-      // Affiche au fil de l'eau le dernier fichier terminé.
       if (jobResults.length && activeResultIdx < jobResults.length) {
         renderResultFiles(); showResult(Math.min(activeResultIdx, jobResults.length - 1));
       }
@@ -784,9 +802,20 @@ async function poll() {
       document.getElementById("run-btn").disabled = false;
     }
   } catch (e) {
-    setProgress("error", "Erreur de polling", "—");
-    setStatus("error", "Erreur de polling : " + e.message);
-    document.getElementById("run-btn").disabled = false;
+    // Erreur TRANSITOIRE (proxy HF, worker occupé en calcul, réseau) : on
+    // réessaie avec un léger backoff. Le job continue côté serveur.
+    pollFailures++;
+    if (pollFailures >= POLL_MAX_FAILURES) {
+      setProgress("error", "Connexion interrompue", "—");
+      setStatus("error",
+        "Suivi interrompu après plusieurs tentatives (" + e.message + "). "
+        + "Le traitement continue peut-être côté serveur : recharge la page dans ~1 min "
+        + "pour le retrouver, ou relance avec moins de fichiers à la fois.");
+      document.getElementById("run-btn").disabled = false;
+      return;
+    }
+    setStatus("warn", `Reconnexion au suivi… (${pollFailures}/${POLL_MAX_FAILURES})`);
+    pollTimer = setTimeout(poll, Math.min(6000, POLL_MS * (1 + pollFailures)));  // backoff léger
   }
 }
 
