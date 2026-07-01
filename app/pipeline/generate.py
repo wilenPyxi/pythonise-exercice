@@ -14,7 +14,7 @@ import logging
 import re
 from typing import Callable, Optional
 
-from app.config import USE_REASONING
+from app.config import EXERCISE_FENCE_BACKTICKS, USE_REASONING
 from app.llm.client import process_with_openrouter
 from app.pipeline.postprocess import (
     PYTHON_FENCE_RE,
@@ -89,25 +89,106 @@ def split_original_questions(content: str) -> tuple[str, str, list[str]]:
     return metadata, enonce, segments
 
 
-def build_exercise_metadata(metadata: str, lists_of_notions: str) -> str:
-    """En-tête déterministe (aucun LLM) — injecte les notions à côté de
-    :involvedConcepts: TYPE_BAC."""
-    cleaned = strip_python_block_from_text(metadata)
-    if lists_of_notions and lists_of_notions not in cleaned:
-        cleaned = re.sub(
-            r":involvedConcepts:\s*TYPE_BAC(?![\w,])",
-            f":involvedConcepts: TYPE_BAC,{lists_of_notions}",
-            cleaned,
-            count=1,
-        )
-    return cleaned.rstrip()
+# Le sélecteur UI envoie ""/"Intermediate"/"Advanced"/"Elementary" ; la
+# plateforme attend Elementary/Intermediary/Advanced (noter Intermediary).
+_LEVEL_MAP = {
+    "": "",
+    "elementary": "Elementary",
+    "intermediate": "Intermediary",
+    "intermediary": "Intermediary",
+    "advanced": "Advanced",
+}
+
+# Ordre canonique des options de l'en-tête {exercise} (gabarit plateforme).
+_HEADER_FIELDS = [
+    "id", "title", "modules", "recommendedExecutionTime", "level",
+    "chap", "involvedConcepts", "originalSource", "visibility",
+]
+
+
+def _parse_source_options(metadata: str) -> dict:
+    """Extrait les `:option: valeur` de l'en-tête source (s'il en a un)."""
+    opts: dict[str, str] = {}
+    for m in re.finditer(r"^[ \t]*:([A-Za-z_][\w-]*):[ \t]*(.*?)[ \t]*$",
+                         metadata or "", re.MULTILINE):
+        opts[m.group(1)] = m.group(2).strip()
+    return opts
+
+
+def _norm_level(value: str) -> str:
+    return _LEVEL_MAP.get((value or "").strip().lower(), (value or "").strip())
+
+
+def build_exercise_metadata(
+    metadata: str,
+    lists_of_notions: str,
+    analysis: dict | None = None,
+    level: str = "",
+) -> str:
+    """Construit TOUJOURS un en-tête `{exercise}` complet et bien formé
+    (5 backticks englobant tout l'exercice — le bloc Python à 4 backticks vient
+    juste après). Règles par champ (consigne utilisateur) :
+      • :id: vide (auto-attribution plateforme)
+      • :title: titre de la source sinon titre déduit de l'analyse
+      • :modules: / :chap: repris de la source si présents, sinon vides
+      • :recommendedExecutionTime: source sinon défaut (≈ 3 min/question)
+      • :level: selon le niveau SÉLECTIONNÉ dans l'UI (mappé Intermediary),
+        sinon niveau de la source, sinon Elementary
+      • :involvedConcepts: notions retrouvées (RAG) sinon concepts de la source
+      • :originalSource: repris de la source si présent
+      • :visibility: All par défaut
+    Reprend le MAXIMUM des métadonnées présentes dans la source."""
+    analysis = analysis or {}
+    src = _parse_source_options(metadata)
+
+    title = src.get("title") or analysis.get("exercise_title") or "Exercice"
+
+    nb_q = analysis.get("nb_questions") or 0
+    try:
+        nb_q = int(nb_q)
+    except (TypeError, ValueError):
+        nb_q = 0
+    ret = src.get("recommendedExecutionTime") or str(max(5, nb_q * 3) if nb_q else 10)
+
+    lvl = _norm_level(level) or _norm_level(src.get("level", "")) or "Elementary"
+
+    concepts = (lists_of_notions or "").strip() or src.get("involvedConcepts", "")
+    # "TYPE_BAC" est un placeholder de gabarit, pas un vrai concept → on l'ôte.
+    concepts = concepts.replace("TYPE_BAC,", "").replace("TYPE_BAC", "").strip().strip(",")
+
+    values = {
+        "id": "",                                   # vide → la plateforme l'attribue
+        "title": title,
+        "modules": src.get("modules", ""),          # repris si présent, sinon vide
+        "recommendedExecutionTime": ret,
+        "level": lvl,
+        "chap": src.get("chap", ""),                # repris si présent, sinon vide
+        "involvedConcepts": concepts,
+        "originalSource": src.get("originalSource", ""),
+        "visibility": src.get("visibility") or "All",
+    }
+
+    fence = "`" * EXERCISE_FENCE_BACKTICKS
+    lines = [f"{fence}{{exercise}}"]
+    lines += [f":{k}: {values[k]}".rstrip() for k in _HEADER_FIELDS]
+    return "\n".join(lines)
+
+
+_ENVELOPE_FENCE_RE = re.compile(r"(?m)^`{5,}(\{exercise\})?[ \t]*$")
 
 
 def assemble_exercise(metadata_header: str, pair_blocks: list[str]) -> str:
-    """Header + blocs de paires + fence finale 5 backticks. Les fences {python}
-    sont normalisées à la convention plateforme (4 backticks)."""
+    """En-tête `{exercise}` (posé par build_exercise_metadata) + blocs de paires
+    + fence finale 5 backticks qui referme l'enveloppe APRÈS la dernière question.
+    Les fences {python} sont normalisées à 4 backticks (convention plateforme).
+    Filet : on retire toute ligne d'enveloppe 5-backticks que le LLM aurait
+    reproduite dans un bloc (on possède l'enveloppe nous-mêmes) — sinon on
+    obtiendrait une double enveloppe / des backticks non décroissants."""
     parts = [metadata_header.rstrip()]
-    parts.extend(block.strip() for block in pair_blocks)
+    for block in pair_blocks:
+        cleaned = _ENVELOPE_FENCE_RE.sub("", block).strip()
+        if cleaned:
+            parts.append(cleaned)
     parts.append("`````")
     assembled = "\n\n".join(parts)
     assembled = assembled.replace("{align*}", "{equation*}")

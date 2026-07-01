@@ -133,7 +133,7 @@ def run_exercise(
 
     # ── 2. Génération par paires ─────────────────────────────────────────────
     metadata, enonce, question_segments = split_original_questions(content)
-    exercise_header = build_exercise_metadata(metadata, lists_of_notions)
+    exercise_header = build_exercise_metadata(metadata, lists_of_notions, analysis, level)
 
     # Contexte fonctions = catalogue CURÉ (domaine détecté) + hits RAG FAISS.
     # Le catalogue curé donne « quel helper pour quel besoin » + couvre les

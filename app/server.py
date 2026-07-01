@@ -41,7 +41,7 @@ _JOBS: dict = {}
 _JOBS_LOCK = threading.Lock()
 
 VALID_LANGS = ("fr", "en", "both")
-VALID_LEVELS = ("", "Intermediate", "Advanced")
+VALID_LEVELS = ("", "Elementary", "Intermediate", "Advanced")
 
 
 def _set_job(job_id: str, **kwargs):
