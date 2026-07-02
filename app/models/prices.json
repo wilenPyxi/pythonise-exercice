@@ -1,0 +1,22 @@
+{
+  "_comment": "Tarifs USD / 1M tokens (in / out / cache-hit lecture). À RE-VÉRIFIER AVANT PROD — ils changent chaque semaine. Relevés sur l'API OpenRouter le 2026-07-02. batch_discount s'applique aux variantes batch (−50 %). claude-sonnet-5 : tarif d'intro (standard 3/15 annoncé après le 2026-08-31).",
+  "batch_discount": 0.5,
+  "models": {
+    "claude-opus-4-8":   {"in": 5.0,   "out": 25.0,  "cache_in": 0.5},
+    "claude-sonnet-5":   {"in": 2.0,   "out": 10.0,  "cache_in": 0.2},
+    "claude-haiku-4-5":  {"in": 1.0,   "out": 5.0,   "cache_in": 0.1},
+    "gpt-5-4":           {"in": 2.5,   "out": 15.0,  "cache_in": 0.25},
+    "gpt-5-4-nano":      {"in": 0.2,   "out": 1.25,  "cache_in": 0.02},
+    "gemini-3-1-pro":    {"in": 1.25,  "out": 10.0,  "cache_in": 0.125},
+    "gemini-3-flash":    {"in": 0.3,   "out": 2.5,   "cache_in": 0.03},
+    "grok-4-3":          {"in": 1.25,  "out": 2.5,   "cache_in": 0.2},
+    "kimi-k2-6":         {"in": 0.55,  "out": 3.2,   "cache_in": 0.11},
+    "glm-5-2":           {"in": 0.93,  "out": 3.0,   "cache_in": 0.18},
+    "glm-4-7-flash":     {"in": 0.06,  "out": 0.4,   "cache_in": 0.01},
+    "deepseek-v4-pro":   {"in": 0.435, "out": 0.87,  "cache_in": 0.00363},
+    "deepseek-v4-flash": {"in": 0.089, "out": 0.18,  "cache_in": 0.018},
+    "mistral-large-3":   {"in": 0.5,   "out": 1.5,   "cache_in": 0.05},
+    "mistral-small":     {"in": 0.075, "out": 0.2,   "cache_in": 0.0},
+    "minimax-m3":        {"in": 0.3,   "out": 1.2,   "cache_in": 0.06}
+  }
+}

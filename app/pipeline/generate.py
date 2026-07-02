@@ -244,6 +244,7 @@ def generate_pair_blocks(
     lang: str = "auto",
     set_step: Optional[Callable[[str], None]] = None,
     decl_type: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> list[str]:
     """Boucle de génération par paires (séquentielle). Retourne les blocs.
     `decl_type` (qcm|qat) bascule sur le prompt Déclinaisons — même mécanique
@@ -291,6 +292,7 @@ def generate_pair_blocks(
                 **common,
             ),
             model_idx=model_idx,
+            model=model,
             max_tokens=30000,
             system_prompt=SYSTEM_PROMPT,
             reasoning=USE_REASONING,
@@ -320,6 +322,7 @@ def generate_pair_blocks(
                 **common,
             ),
             model_idx=model_idx,
+            model=model,
             temperature=0.4,
             max_tokens=16384,
             system_prompt=SYSTEM_PROMPT,

@@ -172,6 +172,7 @@ def run_audit(
     step1_targets: list[str],
     model_idx: int,
     set_step: Optional[Callable[[str], None]] = None,
+    model: Optional[str] = None,
 ) -> tuple[str, list[dict], list[dict]]:
     """Audit LLM en boucle (≤ MAX_AUDIT_ITERATIONS). Retourne
     (exercice patché, patches appliqués, warnings)."""
@@ -191,6 +192,7 @@ def run_audit(
                     exercise=myst_exercise,
                 ),
                 model_idx=model_idx,
+                model=model,
                 temperature=0.0,
                 max_tokens=8192,
                 system_prompt=SYSTEM_PROMPT,

@@ -214,40 +214,55 @@ class ExecTimeout(Exception):
     """Raised when exec exceeds its time budget."""
 
 
-def _timeout_handler(signum, frame):
-    raise ExecTimeout("exec exceeded its time budget")
+class _ExecKill(BaseException):
+    """Escalade du timeout : BaseException pour percer les `except Exception`
+    avaleurs du code généré (seul un `except:` nu peut encore l'attraper)."""
 
 
-def _exec_with_timeout(code: str, namespace: dict, timeout: float) -> None:
+def run_with_timeout(fn, timeout: float):
     """
-    Run `exec(code, namespace)` under a timeout.
+    Run `fn()` under a timeout — utilisé pour l'exec sandboxé ET pour le
+    rendu/scan par graine du harnais (un `str()` sympy sur une expression
+    géante peut mouliner des heures : vu au banc du 2026-07-02).
 
     Two strategies:
-      • Main thread → use `signal.SIGALRM` (cheap, interruptible).
-      • Background thread (Flask worker) → use a daemon thread + `Event.wait`.
+      • Main thread → `signal.SIGALRM` avec re-tir périodique (interval) :
+        1er tir = ExecTimeout ; tirs suivants = _ExecKill (BaseException),
+        car un `try/except Exception` du code généré avale ExecTimeout mais
+        ne peut pas attraper une BaseException. Seul un `except:` nu résiste.
+      • Background thread (Flask worker) → daemon thread + `Event.wait`.
         The daemon thread can't actually be killed in Python; it survives the
         timeout but doesn't block subsequent execs since each call spawns a
         fresh daemon. Acceptable for short math-only workloads.
     """
-    compiled = compile(code, "<sandbox>", "exec")
-
     if threading.current_thread() is threading.main_thread():
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
+        fired = {"n": 0}
+
+        def _handler(signum, frame):
+            fired["n"] += 1
+            if fired["n"] == 1:
+                raise ExecTimeout("exec exceeded its time budget")
+            raise _ExecKill
+
+        old_handler = signal.signal(signal.SIGALRM, _handler)
+        signal.setitimer(signal.ITIMER_REAL, timeout, 0.5)
         try:
-            exec(compiled, namespace)
+            return fn()
+        except _ExecKill:
+            raise ExecTimeout(
+                f"exec tué après {timeout}s (timeout avalé par le code ?)"
+            ) from None
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, old_handler)
-        return
 
     # Background-thread variant: run in a daemon child thread.
-    captured: dict[str, Optional[BaseException]] = {"exc": None}
+    captured: dict[str, object] = {"exc": None, "ret": None}
     done = threading.Event()
 
     def _target() -> None:
         try:
-            exec(compiled, namespace)
+            captured["ret"] = fn()
         except BaseException as e:  # noqa: BLE001 — re-raised below
             captured["exc"] = e
         finally:
@@ -258,7 +273,13 @@ def _exec_with_timeout(code: str, namespace: dict, timeout: float) -> None:
     if not done.wait(timeout):
         raise ExecTimeout(f"exec exceeded {timeout}s")
     if captured["exc"] is not None:
-        raise captured["exc"]
+        raise captured["exc"]  # type: ignore[misc]
+    return captured["ret"]
+
+
+def _exec_with_timeout(code: str, namespace: dict, timeout: float) -> None:
+    compiled = compile(code, "<sandbox>", "exec")
+    run_with_timeout(lambda: exec(compiled, namespace), timeout)
 
 
 def exec_python_block(

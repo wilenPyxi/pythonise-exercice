@@ -32,9 +32,10 @@ from app.config import (
     DEFAULT_LANG,
     DEFAULT_MODE,
     DEFAULT_MODEL_IDX,
+    DEFAULT_POLICY,
     JOB_TTL,
 )
-from app.pipeline.orchestrator import run_declinaisons, run_exercise
+from app.pipeline.orchestrator import run_declinaisons, run_with_policy
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +90,11 @@ def _decl_output_name(source_name: str, decl_type: str) -> str:
 
 
 def _run_job(job_id: str, files: list[dict], level: str, model_idx: int,
-             lang: str, mode: str = "pythonise", decl_types: list | None = None):
+             lang: str, mode: str = "pythonise", decl_types: list | None = None,
+             policy: str = "auto", manual_models: dict | None = None):
     """Worker de job : boucle séquentielle sur les fichiers, robuste.
     En mode `declinaisons`, chaque source produit 1 résultat PAR type coché
-    (analyse partagée entre types — aucun appel LLM redondant)."""
+    (analyse partagée entre types et échelons — aucun appel LLM redondant)."""
     results: list[dict] = []
     for i, f in enumerate(files):
         name = f.get("filename") or f"fichier_{i + 1}.md"
@@ -112,25 +114,30 @@ def _run_job(job_id: str, files: list[dict], level: str, model_idx: int,
                     lang=lang,
                     types=decl_types,
                     set_step=set_step,
+                    policy=policy,
+                    manual_models=manual_models,
                 ):
                     out_name = _decl_output_name(name, decl_type)
                     results.append({"filename": out_name, "status": "done", "result": result})
-                    logger.info("Déclinaison %s : harnais %s, %d warnings, %.1fs, %.4f$",
+                    logger.info("Déclinaison %s : harnais %s, modèle %s, %d warnings, %.1fs, %.4f$",
                                 out_name, "VERT" if result["harness"]["ok"] else "ROUGE",
+                                result.get("model_used"),
                                 len(result["warnings"]), result["duration_s"],
                                 result["cost"]["usd"])
             else:
-                result = run_exercise(
+                result = run_with_policy(
                     content=f["content"],
                     filename=name,
                     level=level,
-                    model_idx=model_idx,
                     lang=lang,
+                    policy=policy,
+                    manual_models=manual_models,
                     set_step=set_step,
                 )
                 results.append({"filename": name, "status": "done", "result": result})
-                logger.info("Fichier %s : harnais %s, %d warnings, %.1fs, %.4f$",
+                logger.info("Fichier %s : harnais %s, modèle %s, %d warnings, %.1fs, %.4f$",
                             name, "VERT" if result["harness"]["ok"] else "ROUGE",
+                            result.get("model_used"),
                             len(result["warnings"]), result["duration_s"],
                             result["cost"]["usd"])
         except Exception as exc:
@@ -198,10 +205,16 @@ def register_routes(app):
 
     @app.route("/api/models", methods=["GET"])
     def models():
+        from app.models.catalog import CANDIDATES
+        from app.models.policy import POLICIES, load_recommended
         return jsonify({
             "models": {str(k): v for k, v in AVAILABLE_MODELS.items()},
             "default_idx": DEFAULT_MODEL_IDX,
             "default_lang": DEFAULT_LANG,
+            "policies": list(POLICIES),
+            "default_policy": DEFAULT_POLICY,
+            "catalog": CANDIDATES,          # candidats par rôle (sans Fable)
+            "recommended": load_recommended(),
         })
 
     @app.route("/api/jobs", methods=["POST"])
@@ -254,6 +267,26 @@ def register_routes(app):
             if not decl_types:
                 return jsonify({"error": "En mode 'declinaisons', cocher au moins un type (qcm/qat)."}), 400
 
+        # Politique de sélection de modèle (§5) — Fable absent du catalogue.
+        from app.models.catalog import CATALOG, ROLES
+        from app.models.policy import POLICIES
+        policy = (data.get("policy") or DEFAULT_POLICY).strip()
+        if policy not in POLICIES:
+            return jsonify({"error": f"'policy' invalide : {policy!r} (auto|best|cheap|manual)."}), 400
+        manual_models: dict = {}
+        if policy == "manual":
+            models_obj = data.get("models") or {}
+            if not isinstance(models_obj, dict):
+                return jsonify({"error": "'models' doit être un objet {generate, audit, mecanique}."}), 400
+            for role in ROLES:
+                key = models_obj.get(role)
+                if not key:          # absent OU "" (select vide) → défaut config
+                    continue
+                if key not in CATALOG or role not in CATALOG[key]["roles"]:
+                    return jsonify({"error": f"Modèle {key!r} invalide pour le rôle {role} "
+                                             f"(catalogue : {[k for k, v in CATALOG.items() if role in v['roles']]})."}), 400
+                manual_models[role] = key
+
         job_id = uuid.uuid4().hex
         with _JOBS_LOCK:
             _JOBS[job_id] = {
@@ -271,7 +304,8 @@ def register_routes(app):
 
         threading.Thread(
             target=_run_job,
-            args=(job_id, clean_files, level, model_idx, lang, mode, decl_types),
+            args=(job_id, clean_files, level, model_idx, lang, mode, decl_types,
+                  policy, manual_models),
             daemon=True,
         ).start()
         return jsonify({"job_id": job_id}), 202

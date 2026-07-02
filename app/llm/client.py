@@ -47,11 +47,13 @@ class LLMClient:
             self._cost_tracker = get_cost_tracker()
         return self._cost_tracker
 
-    def call_llm(self, prompt: str, model_idx: int, temperature: float = 0.0,
+    def call_llm(self, prompt: str, model_idx: int = 0, temperature: float = 0.0,
                  max_tokens: int = 4096, system_prompt: str = SYSTEM_MSG,
-                 reasoning: bool = False) -> str:
-        """Appel LLM standard avec gestion des erreurs et retry."""
-        model = AVAILABLE_MODELS.get(model_idx)
+                 reasoning: bool = False, model: str | None = None) -> str:
+        """Appel LLM standard avec gestion des erreurs et retry.
+        `model` (ID OpenRouter en chaîne, ex. "anthropic/claude-sonnet-5")
+        court-circuite `model_idx` — c'est la voie de la policy par rôle."""
+        model = model or AVAILABLE_MODELS.get(model_idx)
         if model is None:
             raise ValueError(f"model_idx {model_idx} inexistant dans AVAILABLE_MODELS")
 
@@ -132,6 +134,14 @@ class LLMClient:
                     raise RuntimeError(f"API error : {data['error']}")
 
                 content = data["choices"][0]["message"]["content"]
+                # Certains fournisseurs renvoient content:null (réponse vide,
+                # reasoning seul…) : jamais exploitable en aval → retry, puis
+                # RuntimeError propre (gérée par les appelants) au lieu d'un
+                # AttributeError sur .strip().
+                if not isinstance(content, str) or not content.strip():
+                    raise RuntimeError(
+                        f"Réponse vide du modèle {payload['model']} "
+                        f"(content={content!r})")
                 generation_id = data.get("id")
                 return content, generation_id
 
@@ -155,12 +165,15 @@ def get_llm_client() -> LLMClient:
     return _llm_client
 
 
-def process_with_openrouter(prompt: str, model_idx: int, temperature: float = 0.0,
+def process_with_openrouter(prompt: str, model_idx: int = 0, temperature: float = 0.0,
                             max_tokens: int = 4096, image_b64: str = None,
-                            system_prompt: str = SYSTEM_MSG, reasoning: bool = False) -> str:
-    """Point d'entrée unique du pipeline pour tous les appels LLM."""
+                            system_prompt: str = SYSTEM_MSG, reasoning: bool = False,
+                            model: str | None = None) -> str:
+    """Point d'entrée unique du pipeline pour tous les appels LLM.
+    `model` (chaîne) prime sur `model_idx` (legacy)."""
     if image_b64:
         return get_llm_client().call_llm_multimodal(
             image_b64, prompt, model_idx, temperature, max_tokens, system_prompt)
     return get_llm_client().call_llm(
-        prompt, model_idx, temperature, max_tokens, system_prompt, reasoning=reasoning)
+        prompt, model_idx, temperature, max_tokens, system_prompt,
+        reasoning=reasoning, model=model)

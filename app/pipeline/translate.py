@@ -48,6 +48,7 @@ def ensure_language(
     exercise: str,
     target: str,
     model_idx: int,
+    model: str | None = None,
 ) -> tuple[str, list[dict], dict]:
     """
     Amène l'exercice dans la langue cible. Retourne
@@ -83,6 +84,7 @@ def ensure_language(
                 format_directive=fmt,
             ),
             model_idx=model_idx,
+            model=model,
             temperature=0.0,
             max_tokens=24000,
         )

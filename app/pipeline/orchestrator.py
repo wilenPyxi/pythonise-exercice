@@ -30,6 +30,7 @@ from typing import Callable, Optional
 from app.config import (
     HARNESS_GATE_SEEDS,
     HARNESS_REPAIR_MAX,
+    MAX_ESCALADES,
     MULTI_SEED_NUM,
 )
 from app.knowledge.rules_digest import build_rules_digest
@@ -65,7 +66,8 @@ TRUNK_RULES = ["2.1", "3.1", "3.2", "6.1", "6.3", "8.1"]
 
 
 def _translate_constraints_to_assertions(code: str, constraints: list[str],
-                                         model_idx: int) -> list[dict]:
+                                         model_idx: int,
+                                         model: str | None = None) -> list[dict]:
     """Mini appel LLM : contrainte FR → expression booléenne Python."""
     if not constraints or not code.strip():
         return []
@@ -77,6 +79,7 @@ def _translate_constraints_to_assertions(code: str, constraints: list[str],
                                       if isinstance(c, str) and c.strip()),
             ),
             model_idx=model_idx,
+            model=model,
             temperature=0.0,
             max_tokens=2048,
             system_prompt=SYSTEM_PROMPT,
@@ -107,6 +110,7 @@ def run_exercise(
     set_step: Optional[Callable[[str], None]] = None,
     decl_type: Optional[str] = None,
     shared_phase: Optional[tuple] = None,
+    forced_models: Optional[dict] = None,
 ) -> dict:
     """
     Traite UN exercice. `decl_type=None` = pythonisation (flux historique) ;
@@ -122,6 +126,12 @@ def run_exercise(
     t0 = time.time()
     cost_before = cost_snapshot()
     _step = set_step or (lambda label: None)
+    # Modèles par rôle (IDs OpenRouter en chaîne), résolus par la policy ;
+    # None → comportement legacy (model_idx partout).
+    fm = forced_models or {}
+    m_gen = fm.get("generate")
+    m_audit = fm.get("audit")
+    m_meca = fm.get("mecanique")
 
     # ── 1. Analyse + notions + RAG (parallèle ; partagée en mode QCM+QAT) ────
     if shared_phase is not None:
@@ -173,6 +183,7 @@ def run_exercise(
         lang=lang,
         set_step=_step,
         decl_type=decl_type,
+        model=m_gen,
     )
 
     # ── 3. Post-traitements déterministes ────────────────────────────────────
@@ -220,12 +231,12 @@ def run_exercise(
     if analysis.get("has_validated_solution_in_input"):
         _step("Substitution déterministe des solutions validées…")
         myst_exercise, sol_patches = replace_gen_solutions_with_source(
-            myst_exercise, content, analysis, model_idx)
+            myst_exercise, content, analysis, model_idx, model=m_meca)
         audit_patches.extend(sol_patches)
 
     # ── 5. Audit LLM ─────────────────────────────────────────────────────────
     myst_exercise, llm_patches, llm_warnings = run_audit(
-        myst_exercise, step1_targets, model_idx, set_step=_step)
+        myst_exercise, step1_targets, model_idx, set_step=_step, model=m_audit)
     audit_patches.extend(llm_patches)
     audit_warnings.extend(llm_warnings)
 
@@ -315,7 +326,7 @@ def run_exercise(
     main_code = extract_main_python_block(myst_exercise)
     if constraints and main_code:
         _step("Validation multi-seed des invariants…")
-        assertions = _translate_constraints_to_assertions(main_code, constraints, model_idx)
+        assertions = _translate_constraints_to_assertions(main_code, constraints, model_idx, model=m_meca)
         if assertions:
             seed_report = multi_seed_validate(
                 main_code, assertions, num_seeds=MULTI_SEED_NUM, timeout_per_seed=3.0)
@@ -363,7 +374,7 @@ def run_exercise(
 
     # ── 7. Langue cible ──────────────────────────────────────────────────────
     _step("Langue cible…")
-    myst_exercise, lang_warnings, lang_info = ensure_language(myst_exercise, lang, model_idx)
+    myst_exercise, lang_warnings, lang_info = ensure_language(myst_exercise, lang, model_idx, model=m_meca)
     audit_warnings.extend(lang_warnings)
     effective_lang = lang if lang_info["action"] != "aucune" else lang_info["source"]
     audit_warnings.extend(pp.check_decimals_for_lang(myst_exercise, effective_lang))
@@ -391,6 +402,7 @@ def run_exercise(
                     exercise=myst_exercise,
                 ),
                 model_idx=model_idx,
+                model=m_gen,
                 temperature=0.0,
                 max_tokens=30000,
                 system_prompt=SYSTEM_PROMPT,
@@ -455,9 +467,85 @@ def run_exercise(
         },
         "lang": lang_info,
         "decl_type": decl_type,
+        "model_used": m_gen,
         "cost": cost_delta(cost_before),
         "duration_s": round(time.time() - t0, 1),
     }
+
+
+def run_with_policy(
+    content: str,
+    filename: str = "exercise.md",
+    level: str = "",
+    lang: str = "fr",
+    policy: str = "auto",
+    manual_models: Optional[dict] = None,
+    decl_type: Optional[str] = None,
+    shared_phase: Optional[tuple] = None,
+    set_step: Optional[Callable[[str], None]] = None,
+) -> dict:
+    """
+    Traite UN exercice sous POLITIQUE de sélection de modèle (§5) :
+      auto  : pré-classifieur de difficulté → départ sur l'échelle `auto` ;
+              génération → harnais → ≤HARNESS_REPAIR_MAX réparations (même
+              modèle) → si toujours ROUGE, ESCALADE d'un échelon et retente
+              (analyse/RAG PARTAGÉS entre tentatives) → si `best` échoue,
+              marque l'exo pour revue humaine.
+      best / cheap / manual : un seul échelon (le modèle du preset).
+    Télémétrie dans result["policy_telemetry"].
+    """
+    from app.models import policy as mp
+
+    _step = set_step or (lambda label: None)
+    manual = manual_models or {}
+    m_audit = mp.openrouter_id(mp.resolve("audit", policy, manual))
+    m_meca = mp.openrouter_id(mp.resolve("mecanique", policy, manual))
+
+    cost_before_all = cost_snapshot()   # coût HONNÊTE : analyse + tous échelons
+    difficulty = mp.classify_difficulty(content)
+    if policy == "auto":
+        steps = mp.ladder("generate")
+        start = mp.start_rung("generate", difficulty)
+        rungs = steps[start:start + MAX_ESCALADES + 1] or steps[-1:]
+    else:
+        rungs = [mp.resolve("generate", policy, manual)]
+    if not rungs:
+        raise RuntimeError("Aucun modèle utilisable pour le rôle generate "
+                           "(clés API absentes) — vérifier OPENROUTER_API_KEY.")
+
+    shared = shared_phase
+    if shared is None:
+        _step("Analyse + notions + catalogue RAG (en parallèle)…")
+        shared = run_analysis_phase(content, 0, model=m_meca)
+
+    tried: list[dict] = []
+    result: dict = {}
+    key = rungs[0]
+    for i, key in enumerate(rungs):
+        _step(f"Échelon {i + 1}/{len(rungs)} — {key}…")
+        result = run_exercise(
+            content=content, filename=filename, level=level,
+            lang=lang, set_step=_step, decl_type=decl_type,
+            shared_phase=shared,
+            forced_models={"generate": mp.openrouter_id(key),
+                           "audit": m_audit, "mecanique": m_meca},
+        )
+        tried.append({"rung": i, "model": key, "ok": result["harness"]["ok"]})
+        if result["harness"]["ok"]:
+            break
+        logger.info("Échelon %s ROUGE sur %s — escalade.", key, filename)
+
+    result["policy_telemetry"] = {
+        "mode": policy,
+        "difficulty": difficulty,
+        "tried": tried,
+        "winning_model": key,
+        "needs_review": not result["harness"]["ok"],
+    }
+    # Coût honnête : inclut l'analyse partagée (si calculée ici) ET les
+    # échelons perdants — pas seulement la tentative gagnante.
+    result["cost"] = cost_delta(cost_before_all)
+    return result
 
 
 def run_declinaisons(
@@ -468,18 +556,25 @@ def run_declinaisons(
     lang: str = "fr",
     types: Optional[list] = None,
     set_step: Optional[Callable[[str], None]] = None,
+    policy: str = "auto",
+    manual_models: Optional[dict] = None,
 ) -> list[tuple[str, dict]]:
     """
-    Mode `declinaisons` : produit une déclinaison par type coché (qcm/qat).
-    L'analyse + notions + RAG sont calculées UNE SEULE fois et partagées entre
-    les types (aucun appel LLM redondant). Retourne [(decl_type, result), …].
-    Un échec sur un type n'empêche pas l'autre (l'appelant gère l'erreur).
+    Mode `declinaisons` : produit une déclinaison par type coché (qcm/qat),
+    sous politique de sélection de modèle. L'analyse + notions + RAG sont
+    calculées UNE SEULE fois et partagées entre les types ET les échelons
+    (aucun appel LLM redondant). Retourne [(decl_type, result), …].
     """
+    from app.models import policy as mp
+
     _step = set_step or (lambda label: None)
     types = [t for t in (types or []) if t in ("qcm", "qat")] or ["qcm"]
 
+    m_meca = mp.openrouter_id(mp.resolve("mecanique", policy, manual_models))
     _step("Analyse + notions + catalogue RAG (partagés QCM/QAT)…")
-    shared = run_analysis_phase(content, model_idx)
+    cost_before_analysis = cost_snapshot()
+    shared = run_analysis_phase(content, model_idx, model=m_meca)
+    analysis_cost = cost_delta(cost_before_analysis)
 
     out: list[tuple[str, dict]] = []
     for decl_type in types:
@@ -488,15 +583,25 @@ def run_declinaisons(
         def step_with_type(msg: str, _label=label):
             _step(f"[{_label}] {msg}")
 
-        result = run_exercise(
+        result = run_with_policy(
             content=content,
             filename=filename,
             level=level,
-            model_idx=model_idx,
             lang=lang,
-            set_step=step_with_type,
+            policy=policy,
+            manual_models=manual_models,
             decl_type=decl_type,
             shared_phase=shared,
+            set_step=step_with_type,
         )
         out.append((decl_type, result))
+    # L'analyse partagée tombe HORS des fenêtres de coût de run_with_policy :
+    # on l'impute au premier type pour que le total du job reste honnête.
+    if out and analysis_cost["requests"]:
+        c = out[0][1].get("cost") or {"usd": 0.0, "eur": 0.0, "requests": 0}
+        out[0][1]["cost"] = {
+            "usd": round(c["usd"] + analysis_cost["usd"], 6),
+            "eur": round(c["eur"] + analysis_cost["eur"], 6),
+            "requests": c["requests"] + analysis_cost["requests"],
+        }
     return out

@@ -94,6 +94,42 @@ Résultat par fichier : `exercise`, `analysis`, `notions`, `audit_patches`,
 écraser la source) ; en **batch**, bouton **« Tout (.zip) »** → ZIP de toutes
 les sorties + un `_recapitulatif.md` (verdict harnais / warnings / coût par fichier).
 
+## Politique de modèles & banc d'essai (2026-07)
+
+**4 politiques** (`policy` dans `POST /api/jobs`, sélecteur dans l'UI) :
+`auto` (défaut — pré-classifieur de difficulté, départ sur l'échelle par coût
+croissant, escalade d'un échelon à chaque échec harnais, plafonnée `best`) ·
+`best` (qualité max) · `cheap` (le moins cher qui tient `SEUIL_VERT=0.90`) ·
+`manual` (IDs explicites par rôle : `models {generate, audit, mecanique}`).
+Rôles : `generate` (+réparation), `audit`, `mecanique` (analyse, traduction,
+substitutions). Télémétrie de l'échelon gagnant dans `result.policy_telemetry`.
+**`claude-fable-5` est retiré de toutes les listes (choix volontaire).**
+
+**Clés API** : tout fonctionne avec la seule `OPENROUTER_API_KEY` (route de
+repli universelle). Clés directes optionnelles par fournisseur :
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`,
+`DEEPSEEK_API_KEY`, `MOONSHOT_API_KEY`, `ZAI_API_KEY`, `MINIMAX_API_KEY`,
+`MISTRAL_API_KEY` — un modèle sans aucune clé est « non testé », jamais bloquant.
+
+**Banc d'essai** :
+```bash
+python -m bench run                    # rôles/modèles dispo, corpus échantillonné
+python -m bench run --roles generate --models claude-sonnet-5,deepseek-v4-pro
+python -m bench run --exos all --types both --seuil 0.92
+python -m bench run --dry-run          # plomberie mockée (CI, aucune clé)
+python -m bench consolidate            # fusionne les runs partiels/parallèles
+```
+Sorties : `bench/results/<ts>.json|.csv|_rapport.md` + mise à jour de
+`app/models/recommended.json` (protégé par `manual_override: true`).
+Un run filtré `--models` n'écrit jamais recommended.json ; `consolidate`
+fusionne tous les résultats (la cellule la plus récente gagne, restreinte
+à l'échantillon courant du rôle) puis réécrit la recommandation globale.
+Plusieurs bancs peuvent tourner en parallèle (un processus = un compteur
+de coûts isolé) ; ne pas lancer d'autre job LLM dans le même processus.
+Corpus : `bench/corpus/*.md` (ajouter un exercice = y déposer un `.md`).
+Prix : `app/models/prices.json` — **à re-vérifier avant prod, ça change
+chaque semaine**.
+
 ## Sécurité
 
 🚨 **Les clés API dans `.env` étaient en clair dans le zip d'origine** —
@@ -108,8 +144,9 @@ modèle de menace est l'accident LLM, pas un adversaire).
 ## Notes
 
 - Premier lancement : reconstruit le cache FAISS si absent (≈ 30 s).
-- Modèles (IDs vérifiés sur OpenRouter 2026-06-12) : Opus 4.8, **Sonnet 4.6
-  (défaut)**, Fable 5, Haiku 4.5, Gemini 2.5 Pro, GPT-5.2.
+- Modèles (IDs vérifiés sur OpenRouter 2026-07-02) : Opus 4.8, **Sonnet 5
+  (défaut)**, Haiku 4.5, Gemini 2.5 Pro, GPT-5.4 — catalogue complet (16
+  modèles) dans `app/models/catalog.py`. Fable 5 retiré volontairement.
 - L'étape d'analyse suit le modèle choisi par l'utilisateur
   (`ANALYSIS_MODEL_IDX=None` dans config.py pour ce comportement).
 - Mode batch : fichiers traités séquentiellement ; un échec n'arrête pas les

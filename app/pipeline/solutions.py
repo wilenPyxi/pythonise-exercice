@@ -30,6 +30,7 @@ def _substitute_solution_via_llm(
     source_text: str,
     analysis: dict,
     model_idx: int,
+    model: Optional[str] = None,
 ) -> Optional[str]:
     """Appel LLM ciblé : valeurs littérales de la solution source → {{var}}.
     None en cas d'échec (l'appelant garde alors la solution générée)."""
@@ -53,6 +54,7 @@ def _substitute_solution_via_llm(
                 variables_table=variables_table,
             ),
             model_idx=model_idx,
+            model=model,
             temperature=0.0,
             max_tokens=4096,
             system_prompt=SYSTEM_PROMPT,
@@ -70,6 +72,7 @@ def replace_gen_solutions_with_source(
     source_content: str,
     analysis: dict,
     model_idx: int,
+    model: Optional[str] = None,
 ) -> tuple[str, list[dict]]:
     """Remplace chaque detailedSolution générée par la version source
     substituée (correspondance positionnelle). Retourne (exercice, patches)."""
@@ -88,7 +91,7 @@ def replace_gen_solutions_with_source(
         src = source_solutions[i]
         if not src.strip():
             return match.group(0)
-        substituted = _substitute_solution_via_llm(src, analysis, model_idx)
+        substituted = _substitute_solution_via_llm(src, analysis, model_idx, model=model)
         if not substituted:
             return match.group(0)
 

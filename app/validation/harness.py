@@ -30,6 +30,10 @@ from contextlib import redirect_stdout
 
 logger = logging.getLogger(__name__)
 
+# Budget par graine (exec + rendu + scans). Un bloc légitime tient en < 1 s ;
+# au-delà c'est un code généré pathologique → seed en échec, pas de blocage.
+SEED_TIMEOUT_S = 10.0
+
 try:
     import matplotlib
     matplotlib.use("Agg")
@@ -374,14 +378,42 @@ def validate_text(text: str, seeds: int = 100) -> dict:
     body_tmpl = strip_python_blocks(text)
     install_pyxiscience_stubs()
     failures: list[str] = []
+    n_timeouts = 0
+
+    from app.validation.sandbox import ExecTimeout, run_with_timeout
 
     for s in range(seeds):
         random.seed(s)
         env: dict = {"rd": random, "random": random}
-        try:
+        out: dict = {}
+
+        def _seed_pass(env=env, out=out):
             with redirect_stdout(io.StringIO()), _warnings.catch_warnings():
                 _warnings.simplefilter("ignore")   # plt.show() sous Agg, etc.
                 exec(code, env)  # noqa: S102 — sandbox stubs + contenu maison
+            # Le rendu et le scan MCQ font des str() sur les valeurs du
+            # namespace : time-boxés AVEC l'exec (un str() sympy sur une
+            # expression géante peut mouliner des heures — banc 2026-07-02).
+            out["rendered"], out["unresolved"] = render_body(body_tmpl, env)
+            if declinaison:
+                out["mcq"] = check_mcq_collisions(text, env)
+
+        try:
+            run_with_timeout(_seed_pass, SEED_TIMEOUT_S)
+        except ExecTimeout:
+            report["n_exec_errors"] += 1
+            n_timeouts += 1
+            if len(failures) < 5:
+                failures.append(
+                    f"seed {s} : timeout ({SEED_TIMEOUT_S:g}s) — exécution ou "
+                    "rendu pathologiquement lents (expression sympy géante ?)")
+            if _HAS_MPL:
+                _plt.close("all")
+            if n_timeouts >= 3:
+                failures.append("≥ 3 timeouts — graines restantes abandonnées "
+                                "(verdict déjà ROUGE)")
+                break
+            continue
         except Exception:
             report["n_exec_errors"] += 1
             if len(failures) < 5:
@@ -393,7 +425,7 @@ def validate_text(text: str, seeds: int = 100) -> dict:
         if _HAS_MPL:
             _plt.close("all")
 
-        rendered, unresolved = render_body(body_tmpl, env)
+        rendered, unresolved = out["rendered"], out["unresolved"]
         if unresolved:
             report["n_unresolved"] += 1
             if len(failures) < 8:

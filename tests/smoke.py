@@ -229,16 +229,21 @@ On trouve ${}{{a}} + {{b}} = {{sumAff}}$.
 ANALYSIS_CALLS = {"n": 0}
 
 
+GEN_MODELS_SEEN = []          # IDs de modèle vus par les appels de génération
+
+
 def mock_llm(prompt, model_idx=0, temperature=0.0, max_tokens=4096,
-             image_b64=None, system_prompt="", reasoning=False):
+             image_b64=None, system_prompt="", reasoning=False, model=None):
     if "expert en analyse d'exercices" in prompt:
         ANALYSIS_CALLS["n"] += 1
         return MOCK_ANALYSIS
     if "auditeur PyxiScience" in prompt:
         return json.dumps({"verdict": "OK", "issues": []})
     if "Tu déclines un exercice" in prompt:
+        GEN_MODELS_SEEN.append(model)
         return MOCK_MCQ_PAIR if "QCM (MCQ)" in prompt else MOCK_FGQ_PAIR
     if "RÈGLES D'ASSEMBLAGE PAR PAIRE" in prompt:
+        GEN_MODELS_SEEN.append(model)
         return MOCK_PAIR
     return "{}"
 
@@ -323,6 +328,98 @@ r_bad_mode = client.post("/api/jobs", json={"content": "x", "mode": "zzz"})
 check("API : mode invalide → 400", r_bad_mode.status_code == 400)
 r_no_types = client.post("/api/jobs", json={"content": "x", "mode": "declinaisons", "types": {}})
 check("API : declinaisons sans type → 400", r_no_types.status_code == 400)
+
+# ── 3ter. Politiques de modèle + escalade + retrait de Fable ────────────────
+from app.models.catalog import CATALOG, CANDIDATES  # noqa: E402
+from app.models import policy as _mp  # noqa: E402
+
+check("Fable absent du catalogue",
+      not any("fable" in k.lower() for k in CATALOG)
+      and not any("fable" in v["openrouter_id"].lower() for v in CATALOG.values()))
+from app.config import AVAILABLE_MODELS as _AM  # noqa: E402
+check("Fable absent d'AVAILABLE_MODELS",
+      not any("fable" in v.lower() for v in _AM.values()))
+check("Fable absent du fallback policy",
+      not any("fable" in str(_mp.DEFAULT_RECOMMENDED).lower() for _ in [0]))
+
+# best / cheap / manual suivent recommended.json (source VIVANTE : le banc la
+# réécrit — on vérifie la cohérence de la résolution, pas des noms figés).
+_rec_gen = _mp.load_recommended()["generate"]
+check("policy best suit recommended.json",
+      _mp.resolve("generate", "best") == _rec_gen["best"])
+check("policy cheap suit recommended.json",
+      _mp.resolve("generate", "cheap") == _rec_gen["cheap"])
+check("policy manual respecté",
+      _mp.resolve("generate", "manual", {"generate": "deepseek-v4-pro"}) == "deepseek-v4-pro")
+check("difficulté : matrices → difficile",
+      _mp.classify_difficulty("Matrix systeme " * 100 + ":::::{question}" * 6) == "difficile")
+
+# Escalade : 1er échelon forcé ROUGE (options en collision) → échelon 2 VERT.
+MOCK_MCQ_RED = MOCK_MCQ_PAIR.replace("{{d1Aff}}", "{{sumAff}}")
+_calls = {"n": 0}
+
+
+def mock_llm_escalade(prompt, model_idx=0, temperature=0.0, max_tokens=4096,
+                      image_b64=None, system_prompt="", reasoning=False, model=None):
+    if "expert en analyse d'exercices" in prompt:
+        return MOCK_ANALYSIS
+    if "auditeur PyxiScience" in prompt:
+        return json.dumps({"verdict": "OK", "issues": []})
+    if "harnais" in prompt and "REJETÉ" in prompt:
+        return MOCK_MCQ_RED          # la réparation échoue aussi sur l'échelon 1
+    if "Tu déclines un exercice" in prompt or "RÈGLES D'ASSEMBLAGE PAR PAIRE" in prompt:
+        _calls["n"] += 1
+        # 1re GÉNÉRATION (échelon 1) rouge ; la suivante (échelon 2) verte.
+        return MOCK_MCQ_RED if _calls["n"] <= 1 else MOCK_MCQ_PAIR
+    return "{}"
+
+
+for _m in (analyze, audit, generate, orchestrator):
+    _m.process_with_openrouter = mock_llm_escalade
+import app.pipeline.solutions as _sols  # noqa: E402
+import app.pipeline.translate as _tr  # noqa: E402
+_sols.process_with_openrouter = mock_llm_escalade
+_tr.process_with_openrouter = mock_llm_escalade
+
+res_esc = orchestrator.run_with_policy(
+    content=SMOKE_SOURCE, filename="esc.md", lang="fr",
+    policy="auto", decl_type="qcm")
+tel = res_esc["policy_telemetry"]
+check("escalade : ≥2 échelons tentés", len(tel["tried"]) >= 2)
+check("escalade : échelon 1 ROUGE puis gagnant VERT",
+      tel["tried"][0]["ok"] is False and tel["tried"][-1]["ok"] is True)
+check("escalade : échelon gagnant journalisé",
+      tel["winning_model"] == tel["tried"][-1]["model"] and not tel["needs_review"])
+
+# Restaure les mocks standards pour la suite.
+for _m in (analyze, audit, generate, orchestrator):
+    _m.process_with_openrouter = mock_llm
+_sols.process_with_openrouter = mock_llm
+_tr.process_with_openrouter = mock_llm
+
+# API : policy invalide → 400 ; manual avec modèle hors rôle → 400.
+check("API : policy invalide → 400",
+      client.post("/api/jobs", json={"content": "x", "policy": "zzz"}).status_code == 400)
+check("API : manual modèle hors rôle → 400",
+      client.post("/api/jobs", json={"content": "x", "policy": "manual",
+                                     "models": {"generate": "glm-4-7-flash"}}).status_code == 400)
+check("/api/models expose catalogue par rôle sans Fable",
+      "fable" not in json.dumps(client.get("/api/models").get_json()).lower())
+
+# Banc : --dry-run (plomberie complète hors ligne).
+import subprocess  # noqa: E402
+
+bench_proc = subprocess.run(
+    [sys.executable, "-m", "bench", "run", "--dry-run",
+     "--roles", "generate", "--models", "claude-sonnet-5,claude-opus-4-8",
+     "--seeds", "5"],
+    capture_output=True, text=True, timeout=600,
+    cwd=str(Path(__file__).resolve().parent.parent),
+)
+check("bench --dry-run : exit 0", bench_proc.returncode == 0)
+check("bench --dry-run : reco produite", "best=" in bench_proc.stdout)
+check("bench --dry-run : recommended.json non modifié",
+      "NON modifié" in bench_proc.stdout)
 
 # ── 4. Téléchargement ZIP (endpoint, sans LLM) ───────────────────────────────
 import io as _io  # noqa: E402

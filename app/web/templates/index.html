@@ -362,8 +362,24 @@
           </div>
         </div>
         <div>
-          <label class="field-label" for="model-select">Modèle</label>
-          <select id="model-select" aria-label="Modèle LLM"></select>
+          <label class="field-label" for="policy-select">Politique de modèle</label>
+          <select id="policy-select" onchange="onPolicyChange()">
+            <option value="auto">Auto (l'app décide)</option>
+            <option value="best">Meilleur (qualité max)</option>
+            <option value="cheap">Économique</option>
+            <option value="manual">Manuel</option>
+          </select>
+        </div>
+        <div id="manual-models" class="meta-full" hidden>
+          <label class="field-label">Modèles par rôle (mode Manuel)</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div><label class="field-label" for="model-generate">Génération</label>
+              <select id="model-generate"></select></div>
+            <div><label class="field-label" for="model-audit">Audit</label>
+              <select id="model-audit"></select></div>
+            <div><label class="field-label" for="model-mecanique">Mécanique</label>
+              <select id="model-mecanique"></select></div>
+          </div>
         </div>
         <div>
           <label class="field-label" for="lang-select">Langue cible</label>
@@ -474,33 +490,49 @@ async function fetchModels() {
   try {
     const res = await fetch("/api/models");
     if (!res.ok) return;
-    const { models, default_idx, default_lang } = await res.json();
-    const sel = document.getElementById("model-select");
-    sel.innerHTML = "";
-    for (const [idx, slug] of Object.entries(models).sort((a, b) => Number(a[0]) - Number(b[0]))) {
-      const opt = document.createElement("option");
-      opt.value = idx;
-      opt.textContent = prettyModelName(slug);
-      if (Number(idx) === default_idx) opt.selected = true;
-      sel.appendChild(opt);
+    const { default_lang, default_policy, catalog, recommended } = await res.json();
+    // Dropdowns par rôle (mode Manuel), alimentés par le catalogue (sans Fable).
+    const roleDefaults = {
+      generate: recommended?.generate?.cheap,
+      audit: recommended?.audit?.best,
+      mecanique: recommended?.mecanique?.cheap,
+    };
+    for (const role of ["generate", "audit", "mecanique"]) {
+      const sel = document.getElementById(`model-${role}`);
+      if (!sel || !catalog?.[role]) continue;
+      sel.innerHTML = "";
+      for (const key of catalog[role]) {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = prettyModelName(key);
+        if (key === roleDefaults[role]) opt.selected = true;
+        sel.appendChild(opt);
+      }
     }
+    if (default_policy) document.getElementById("policy-select").value = default_policy;
     if (default_lang) document.getElementById("lang-select").value = default_lang;
+    onPolicyChange();
   } catch (e) { console.warn("/api/models:", e); }
 }
 
 function prettyModelName(slug) {
-  const [, name = slug] = slug.split("/");
+  const name = slug.includes("/") ? slug.split("/")[1] : slug;
   return name
     .replace(/^claude-/, "Claude ").replace(/^gpt-/, "GPT-")
     .replace(/^gemini-/, "Gemini ").replace(/-/g, " ")
     .replace(/\b\w/g, c => c.toUpperCase()).replace(/Gpt/g, "GPT");
 }
 
-/* ─── Mode (pythonisation / déclinaisons) ─── */
+/* ─── Mode (pythonisation / déclinaisons) + politique de modèle ─── */
 function onModeChange() {
   const decl = document.getElementById("mode-select").value === "declinaisons";
   document.getElementById("decl-types").hidden = !decl;
   updateRunLabel();
+}
+
+function onPolicyChange() {
+  const manual = document.getElementById("policy-select").value === "manual";
+  document.getElementById("manual-models").hidden = !manual;
 }
 
 function updateRunLabel() {
@@ -723,7 +755,16 @@ function setMetaResult(entry) {
       decl += `<span class="pill pill--info">repli MCQ partiel</span>`;
     }
   }
-  el.innerHTML = verdict + decl + cost + lang + dur;
+  let pol = "";
+  const t = r.policy_telemetry;
+  if (t) {
+    const esc = (t.tried || []).length > 1 ? ` (${t.tried.length} échelons)` : "";
+    pol = `<span class="pill pill--info">modèle : ${escapeHtml(prettyModelName(t.winning_model || r.model_used || "?"))}${esc} · ${escapeHtml(t.mode)}/${escapeHtml(t.difficulty)}</span>`;
+    if (t.needs_review) pol += `<span class="pill pill--ko">revue humaine requise</span>`;
+  } else if (r.model_used) {
+    pol = `<span class="pill pill--info">modèle : ${escapeHtml(prettyModelName(r.model_used))}</span>`;
+  }
+  el.innerHTML = verdict + decl + pol + cost + lang + dur;
 }
 
 /* Sélecteur de fichier (batch) */
@@ -767,13 +808,21 @@ async function run() {
   if (!files.length) { setStatus("error", "Saisissez un énoncé ou chargez des fichiers .md."); return; }
 
   const mode = document.getElementById("mode-select").value;
+  const policyMode = document.getElementById("policy-select").value;
   const payload = {
     files,
     level: document.getElementById("level").value,
     lang: document.getElementById("lang-select").value,
-    model_idx: Number(document.getElementById("model-select").value || 0),
     mode,
+    policy: policyMode,
   };
+  if (policyMode === "manual") {
+    payload.models = {
+      generate: document.getElementById("model-generate").value,
+      audit: document.getElementById("model-audit").value,
+      mecanique: document.getElementById("model-mecanique").value,
+    };
+  }
   if (mode === "declinaisons") {
     payload.types = {
       qcm: document.getElementById("type-qcm").checked,

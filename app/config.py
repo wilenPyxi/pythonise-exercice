@@ -25,16 +25,16 @@ TEMPLATES_DIR = PACKAGE_DIR / "web" / "templates"
 PYTHON_FENCE_BACKTICKS = 4
 EXERCISE_FENCE_BACKTICKS = 5
 
-# ── Modèles LLM (IDs vérifiés sur l'API OpenRouter le 2026-06-12) ────────────
+# ── Modèles LLM (IDs vérifiés sur l'API OpenRouter le 2026-07-02) ────────────
+# NOTE : claude-fable-5 retiré volontairement (§7 du prompt banc multi-modèles).
 AVAILABLE_MODELS = {
     0: "anthropic/claude-opus-4.8",
-    1: "anthropic/claude-sonnet-4.6",
-    2: "anthropic/claude-fable-5",
-    3: "anthropic/claude-haiku-4.5",
-    4: "google/gemini-2.5-pro",
-    5: "openai/gpt-5.2",
+    1: "anthropic/claude-sonnet-5",
+    2: "anthropic/claude-haiku-4.5",
+    3: "google/gemini-2.5-pro",
+    4: "openai/gpt-5.4",
 }
-DEFAULT_MODEL_IDX = 1            # claude-sonnet-4.6
+DEFAULT_MODEL_IDX = 1            # claude-sonnet-5
 
 # Modèle de l'étape d'analyse : None = suivre le modèle choisi par l'utilisateur
 # (corrige le model_idx=2 codé en dur de l'ancienne version) ; un int force un
@@ -47,15 +47,37 @@ ANALYSIS_MODEL_IDX: int | None = None
 NOTIONS_MODEL = "openai/gpt-5-mini"
 
 # Prix $/M tokens (fallback si l'API generation ne renvoie pas le coût réel).
-# Relevés sur openrouter.ai le 2026-06-12.
+# Relevés sur openrouter.ai le 2026-07-02. Source détaillée (cache/batch) :
+# app/models/prices.json — à re-vérifier avant prod, ça bouge chaque semaine.
 MODEL_PRICING = {
-    "anthropic/claude-opus-4.8":   {"input": 5.0,  "output": 25.0},
-    "anthropic/claude-sonnet-4.6": {"input": 3.0,  "output": 15.0},
-    "anthropic/claude-fable-5":    {"input": 10.0, "output": 50.0},
-    "anthropic/claude-haiku-4.5":  {"input": 1.0,  "output": 5.0},
-    "google/gemini-2.5-pro":       {"input": 1.25, "output": 10.0},
-    "openai/gpt-5.2":              {"input": 1.75, "output": 14.0},
+    "anthropic/claude-opus-4.8":   {"input": 5.0,   "output": 25.0},
+    "anthropic/claude-sonnet-5":   {"input": 2.0,   "output": 10.0},
+    "anthropic/claude-haiku-4.5":  {"input": 1.0,   "output": 5.0},
+    "google/gemini-2.5-pro":       {"input": 1.25,  "output": 10.0},
+    "google/gemini-2.5-flash":     {"input": 0.3,   "output": 2.5},
+    "openai/gpt-5.4":              {"input": 2.5,   "output": 15.0},
+    "openai/gpt-5.4-nano":         {"input": 0.2,   "output": 1.25},
+    "x-ai/grok-4.3":               {"input": 1.25,  "output": 2.5},
+    "moonshotai/kimi-k2.6":        {"input": 0.55,  "output": 3.2},
+    "z-ai/glm-5.2":                {"input": 0.93,  "output": 3.0},
+    "z-ai/glm-4.7-flash":          {"input": 0.06,  "output": 0.4},
+    "deepseek/deepseek-v4-pro":    {"input": 0.435, "output": 0.87},
+    "deepseek/deepseek-v4-flash":  {"input": 0.089, "output": 0.18},
+    "mistralai/mistral-large-2512": {"input": 0.5,  "output": 1.5},
+    "mistralai/mistral-small-3.2-24b-instruct": {"input": 0.075, "output": 0.2},
+    "minimax/minimax-m3":          {"input": 0.3,   "output": 1.2},
 }
+
+# ── Politique de sélection de modèle (banc multi-modèles, §5) ────────────────
+DEFAULT_POLICY = "auto"          # auto | best | cheap | manual
+SEUIL_VERT = 0.90                # taux VERT minimal pour qu'un modèle « tienne »
+MAX_ESCALADES = 3                # plafond d'échelons gravis en mode auto
+PRICES_PATH = PACKAGE_DIR / "models" / "prices.json"
+RECOMMENDED_PATH = PACKAGE_DIR / "models" / "recommended.json"
+# Choix explicites du mode `manual` (clés du catalogue app/models/catalog.py).
+MODEL_GENERATE = "claude-sonnet-5"
+MODEL_AUDIT = "claude-opus-4-8"
+MODEL_MECANIQUE = "claude-haiku-4-5"
 
 # ── Pipeline ─────────────────────────────────────────────────────────────────
 RAG_TOP_K            = 10        # catalogue RAG (était 3 — trop étroit)

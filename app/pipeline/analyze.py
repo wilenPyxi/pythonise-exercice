@@ -68,13 +68,16 @@ def _parse_analysis(raw: str, content: str) -> dict:
     return analysis
 
 
-def run_analysis_phase(content: str, model_idx: int) -> tuple[dict, str, str, str]:
+def run_analysis_phase(content: str, model_idx: int,
+                       model: str | None = None) -> tuple[dict, str, str, str]:
     """
     Lance EN PARALLÈLE : analyse LLM, notions, RAG fonctions.
 
     Retourne (analysis, notions_ctx, lists_of_notions, functions_ctx).
     Une erreur sur notions/RAG est dégradée en contexte vide (warning loggé) ;
     une erreur sur l'analyse LLM est propagée (le pipeline n'a pas de sens sans).
+    `model` (ID chaîne) prime sur model_idx — sous policy, l'analyse relève du
+    rôle `mecanique` (classification, §2 du prompt banc).
     """
     analysis_model = ANALYSIS_MODEL_IDX if ANALYSIS_MODEL_IDX is not None else model_idx
 
@@ -83,6 +86,7 @@ def run_analysis_phase(content: str, model_idx: int) -> tuple[dict, str, str, st
             process_with_openrouter,
             prompt=STEP1_PROMPT.format(content=content, available_rules_menu=_rules_menu()),
             model_idx=analysis_model,
+            model=model,
             max_tokens=6096,
         )
         f_notions = pool.submit(enrich_exercise_with_notions, content, xlsx_path=NOTIONS_XLSX)

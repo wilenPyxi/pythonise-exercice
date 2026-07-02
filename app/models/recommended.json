@@ -1,0 +1,44 @@
+{
+  "_comment": "Écrit par `python -m bench run`. manual_override=true pour protéger un choix manuel.",
+  "_bench_timestamp": "20260702-165614_consolidated_370220",
+  "manual_override": false,
+  "roles": {
+    "generate": {
+      "best": "deepseek-v4-pro",
+      "cheap": "deepseek-v4-pro",
+      "ladder": [
+        "deepseek-v4-pro",
+        "kimi-k2-6",
+        "glm-5-2",
+        "grok-4-3",
+        "gemini-3-1-pro",
+        "claude-sonnet-5",
+        "claude-opus-4-8"
+      ]
+    },
+    "mecanique": {
+      "best": "mistral-small",
+      "cheap": "mistral-small",
+      "ladder": [
+        "mistral-small",
+        "deepseek-v4-flash",
+        "glm-4-7-flash",
+        "gpt-5-4-nano",
+        "minimax-m3",
+        "gemini-3-flash",
+        "claude-haiku-4-5"
+      ]
+    },
+    "audit": {
+      "best": "deepseek-v4-pro",
+      "cheap": "deepseek-v4-pro",
+      "ladder": [
+        "deepseek-v4-pro",
+        "kimi-k2-6",
+        "grok-4-3",
+        "gemini-3-1-pro",
+        "claude-opus-4-8"
+      ]
+    }
+  }
+}
