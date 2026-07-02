@@ -354,10 +354,10 @@
           <label class="field-label">Types de déclinaison</label>
           <div style="display:flex;gap:14px;padding:9px 2px;font-size:13px;">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="type-qcm" checked> QCM
+              <input type="checkbox" id="type-qcm" checked onchange="updateRunLabel()"> QCM
             </label>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="type-qat"> QAT
+              <input type="checkbox" id="type-qat" onchange="updateRunLabel()"> QAT
             </label>
           </div>
         </div>
@@ -500,6 +500,19 @@ function prettyModelName(slug) {
 function onModeChange() {
   const decl = document.getElementById("mode-select").value === "declinaisons";
   document.getElementById("decl-types").hidden = !decl;
+  updateRunLabel();
+}
+
+function updateRunLabel() {
+  const btn = document.getElementById("run-btn");
+  if (document.getElementById("mode-select").value !== "declinaisons") {
+    btn.textContent = "Lancer la pythonisation";
+    return;
+  }
+  const qcm = document.getElementById("type-qcm").checked;
+  const qat = document.getElementById("type-qat").checked;
+  const what = (qcm && qat) ? "QCM + QAT" : qat ? "QAT" : qcm ? "QCM" : "…";
+  btn.textContent = `Générer les déclinaisons ${what}`;
 }
 
 /* ─── Tabs ─── */
