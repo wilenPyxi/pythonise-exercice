@@ -30,10 +30,11 @@ from flask import Response, jsonify, render_template, request, send_file
 from app.config import (
     AVAILABLE_MODELS,
     DEFAULT_LANG,
+    DEFAULT_MODE,
     DEFAULT_MODEL_IDX,
     JOB_TTL,
 )
-from app.pipeline.orchestrator import run_exercise
+from app.pipeline.orchestrator import run_declinaisons, run_exercise
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ _JOBS_LOCK = threading.Lock()
 
 VALID_LANGS = ("fr", "en", "both")
 VALID_LEVELS = ("", "Elementary", "Intermediate", "Advanced")
+VALID_MODES = ("pythonise", "declinaisons")
 
 
 def _set_job(job_id: str, **kwargs):
@@ -57,14 +59,16 @@ def _get_job(job_id: str):
 
 
 def _safe_md_name(filename: str, used: set) -> str:
-    """Nom de fichier .md sûr et unique pour la sortie pythonisée
-    (suffixe _pythonise pour ne pas écraser la source)."""
+    """Nom de fichier .md sûr et unique pour le ZIP. Les déclinaisons portent
+    déjà leur suffixe (_QCM/_QAT) ; la pythonisation reçoit _pythonise pour
+    ne pas écraser la source."""
     base = re.sub(r"\.(md|txt)$", "", filename or "", flags=re.IGNORECASE)
     base = re.sub(r"[^\w.\-() ]+", "_", base).strip() or "exercice"
-    name = f"{base}_pythonise.md"
+    suffix = "" if re.search(r"_(QCM|QAT)$", base) else "_pythonise"
+    name = f"{base}{suffix}.md"
     i = 2
     while name in used:
-        name = f"{base}_pythonise_{i}.md"
+        name = f"{base}{suffix}_{i}.md"
         i += 1
     used.add(name)
     return name
@@ -78,8 +82,17 @@ def _purge_old_jobs():
             del _JOBS[jid]
 
 
-def _run_job(job_id: str, files: list[dict], level: str, model_idx: int, lang: str):
-    """Worker de job : boucle séquentielle sur les fichiers, robuste."""
+def _decl_output_name(source_name: str, decl_type: str) -> str:
+    """foo.md + qcm → foo_QCM.md (nommage de sortie des déclinaisons)."""
+    base = re.sub(r"\.(md|txt)$", "", source_name or "exercice", flags=re.IGNORECASE)
+    return f"{base}_{'QCM' if decl_type == 'qcm' else 'QAT'}.md"
+
+
+def _run_job(job_id: str, files: list[dict], level: str, model_idx: int,
+             lang: str, mode: str = "pythonise", decl_types: list | None = None):
+    """Worker de job : boucle séquentielle sur les fichiers, robuste.
+    En mode `declinaisons`, chaque source produit 1 résultat PAR type coché
+    (analyse partagée entre types — aucun appel LLM redondant)."""
     results: list[dict] = []
     for i, f in enumerate(files):
         name = f.get("filename") or f"fichier_{i + 1}.md"
@@ -90,19 +103,36 @@ def _run_job(job_id: str, files: list[dict], level: str, model_idx: int, lang: s
             _set_job(job_id, step_label=f"[{_i + 1}/{len(files)}] {_name} — {label}")
 
         try:
-            result = run_exercise(
-                content=f["content"],
-                filename=name,
-                level=level,
-                model_idx=model_idx,
-                lang=lang,
-                set_step=set_step,
-            )
-            results.append({"filename": name, "status": "done", "result": result})
-            logger.info("Fichier %s : harnais %s, %d warnings, %.1fs, %.4f$",
-                        name, "VERT" if result["harness"]["ok"] else "ROUGE",
-                        len(result["warnings"]), result["duration_s"],
-                        result["cost"]["usd"])
+            if mode == "declinaisons":
+                for decl_type, result in run_declinaisons(
+                    content=f["content"],
+                    filename=name,
+                    level=level,
+                    model_idx=model_idx,
+                    lang=lang,
+                    types=decl_types,
+                    set_step=set_step,
+                ):
+                    out_name = _decl_output_name(name, decl_type)
+                    results.append({"filename": out_name, "status": "done", "result": result})
+                    logger.info("Déclinaison %s : harnais %s, %d warnings, %.1fs, %.4f$",
+                                out_name, "VERT" if result["harness"]["ok"] else "ROUGE",
+                                len(result["warnings"]), result["duration_s"],
+                                result["cost"]["usd"])
+            else:
+                result = run_exercise(
+                    content=f["content"],
+                    filename=name,
+                    level=level,
+                    model_idx=model_idx,
+                    lang=lang,
+                    set_step=set_step,
+                )
+                results.append({"filename": name, "status": "done", "result": result})
+                logger.info("Fichier %s : harnais %s, %d warnings, %.1fs, %.4f$",
+                            name, "VERT" if result["harness"]["ok"] else "ROUGE",
+                            len(result["warnings"]), result["duration_s"],
+                            result["cost"]["usd"])
         except Exception as exc:
             logger.exception("Échec du pipeline sur %s", name)
             results.append({"filename": name, "status": "error", "error": str(exc)})
@@ -212,6 +242,18 @@ def register_routes(app):
                 "error": f"'model_idx' inconnu : {model_idx}. Valides : {sorted(AVAILABLE_MODELS)}."
             }), 400
 
+        mode = (data.get("mode") or DEFAULT_MODE).strip()
+        if mode not in VALID_MODES:
+            return jsonify({"error": f"'mode' invalide : {mode!r} (pythonise|declinaisons)."}), 400
+        decl_types: list = []
+        if mode == "declinaisons":
+            types_obj = data.get("types") or {}
+            if not isinstance(types_obj, dict):
+                return jsonify({"error": "'types' doit être un objet {qcm: bool, qat: bool}."}), 400
+            decl_types = [t for t in ("qcm", "qat") if types_obj.get(t)]
+            if not decl_types:
+                return jsonify({"error": "En mode 'declinaisons', cocher au moins un type (qcm/qat)."}), 400
+
         job_id = uuid.uuid4().hex
         with _JOBS_LOCK:
             _JOBS[job_id] = {
@@ -229,7 +271,7 @@ def register_routes(app):
 
         threading.Thread(
             target=_run_job,
-            args=(job_id, clean_files, level, model_idx, lang),
+            args=(job_id, clean_files, level, model_idx, lang, mode, decl_types),
             daemon=True,
         ).start()
         return jsonify({"job_id": job_id}), 202

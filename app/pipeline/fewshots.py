@@ -79,3 +79,16 @@ def fewshot_for(analysis: dict) -> str:
     shot = load_fewshot(key)
     logger.info("Few-shot sélectionné : %s (%d caractères)", key, len(shot))
     return shot or "(aucun exemple canonique disponible pour ce type)"
+
+
+@lru_cache(maxsize=None)
+def fewshot_for_declinaison(decl_type: str) -> str:
+    """Exemple canonique COMPLET pour une déclinaison (qcm|qat) — fichiers
+    stricts (conventions corpus 222) calibrés sur les 33 exemples validés de
+    fewshots/declinaisons/. Complet (pas élagué) : la structure mcqAnswer /
+    :solution:/displayedSolution est le cœur de ce qu'il faut imiter."""
+    path = FEWSHOTS_DIR / f"{decl_type}.md"
+    if not path.exists():
+        logger.warning("Few-shot déclinaison absent : %s", path)
+        return "(aucun exemple canonique disponible)"
+    return path.read_text(encoding="utf-8")

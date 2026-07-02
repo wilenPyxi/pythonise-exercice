@@ -524,6 +524,279 @@ TRANSLATE_FORMAT_BOTH = (
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DÉCLINAISONS QCM / QAT (NOUVEAU 2026-07 — mode `declinaisons`)
+# Spécification normative fournie par l'équipe (PROMPT_declinaisons_QCM_QAT §4-§6),
+# calibrée sur les 33 exemples validés de knowledge/fewshots/declinaisons/.
+# Divergences wx ↔ conventions strictes (corpus 222) tranchées : format
+# plateforme des wx (mcqAnswer/:solution:/{input}) + conventions strictes de
+# l'app (fences 4, globals(), injections nues camelCase Aff, IDs contigus).
+# ─────────────────────────────────────────────────────────────────────────────
+
+MCQ_SPEC = """\
+FORMAT QCM (questionType MCQ) — NORMATIF :
+
+:::::{question}
+:questionType: MCQ
+:questionId: N
+:questionIndex: N
+
+::::{questionStatement}
+<énoncé auto-suffisant ; maths et {{ }} HORS des rôles bilingues>
+::::
+
+::::{questionHint}
+<indice — peut rester vide ; VERBATIM si repris de la source>
+::::
+
+::::{mcqAnswer}
+:isRightAnswer: true
+<BONNE réponse — TOUJOURS en slot 1>
+::::
+
+::::{mcqAnswer}
+:isRightAnswer: false
+<distracteur 1 — erreur type>
+::::
+
+::::{mcqAnswer}
+:isRightAnswer: false
+<distracteur 2 — erreur type>
+::::
+
+::::{mcqAnswer}
+:isRightAnswer: false
+<distracteur 3 — erreur type>
+::::
+
+::::{mcqAnswer}
+:isRightAnswer: false
+{fr}`Aucune de ces réponses n'est correcte`{en}`None of these answers are correct`
+::::
+
+::::{detailedSolution}
+<solution détaillée ; VERBATIM de la source si elle existe, sinon rédigée>
+::::
+
+::::{weightDistribution}
+:logic: 25
+:abstraction: 25
+:reasoning: 25
+:calculation: 25
+::::
+:::::
+
+RÈGLES MCQ DURES :
+  • EXACTEMENT UNE option `:isRightAnswer: true`, EN SLOT 1 (l'affichage est
+    mélangé côté plateforme — ne PAS randomiser l'ordre dans le fichier).
+  • 5 options par défaut (1 correcte + 3 distracteurs + « None » EN DERNIER).
+    Ensembles fermés (vrai/faux, intervalles exhaustifs) : « None » omis
+    autorisé (⇒ 4 options ; jamais moins de 3).
+  • PAS de `:solution:`, PAS de `{input}`, PAS de displayedSolution en MCQ.
+  • Ordre des blocs : questionStatement → questionHint → mcqAnswer×N →
+    detailedSolution → weightDistribution.
+  • L'option « None » et toute option textuelle sont bilingues si la cible l'est.
+
+DISTRACTEURS — ERREURS TYPES UNIQUEMENT (aucune valeur au hasard) :
+  • Algèbre : erreur de signe ; coefficient inversé ; terme oublié ; distribution partielle.
+  • Dérivées : oubli du facteur de la règle de chaîne ; exposant non décrémenté ;
+    primitive au lieu de dérivée ; quotient sans v² ; produit sans la 2e moitié.
+  • Intégrales : oubli du +1 sur l'exposant ; oubli du 1/a ; dérivée au lieu de
+    primitive ; oubli de |x| dans ln.
+  • Matrices : transposée ; colonnes/lignes échangées ; entrée non dérivée ;
+    matrice opposée ; oubli du terme +b.
+  • Compositions affines : oubli de b_f ; ordre inversé (g∘f vs f∘g) ; signe opposé.
+  • Limites : mauvaise forme indéterminée ; mauvais signe d'infini.
+
+ANTI-COLLISION (le piège n°1 des QCM randomisés — un distracteur peut devenir
+ÉGAL à la bonne réponse sur certaines graines) — dans CET ordre :
+  1. DISTINCT PAR CONSTRUCTION (préféré) : distracteurs de type différent,
+     tirages qui garantissent la non-nullité/non-égalité (coefficients >= 2,
+     exposants >= 2, entrées non nulles…). Documente-le en commentaire Python.
+  2. TIRAGE AVEC REJET dans le bloc Python : reboucler tant que les chaînes
+     RENDUES (latex) de toutes les options ne sont pas toutes distinctes.
+  3. Le harnais vérifie l'unicité sur 100 graines — un doublon = REJET.
+  ⚠️ La collision est aussi SÉMANTIQUE : deux options formulées différemment
+  mais mathématiquement ÉQUIVALENTES (« divise x par 2 » ≡ « multiplie x par
+  1/2 » ; « T_{1/a,1/b} » ≡ « division par a et b ») comptent comme un doublon
+  pour l'élève. Vérifie l'équivalence MATHÉMATIQUE de chaque paire d'options
+  sur TOUT l'espace des tirages (ex. b == 1/a possible ? → l'exclure au tirage).
+
+UN SEUL bloc {python} au total : JAMAIS de re-tirage (`rd.`/`random`) hors du
+bloc principal — un second tirage rendrait les valeurs incohérentes entre les
+questions. Les variables des paires suivantes s'ajoutent SANS aléa nouveau.
+
+FORMATAGE : STRICTEMENT IDENTIQUE entre bonne réponse et distracteurs (même
+style LaTeX, mêmes helpers, même nombre de décimales, même notation
+matricielle) — sinon la bonne réponse se devine.
+
+L'ÉNONCÉ NE DONNE JAMAIS LA RÉPONSE (l'énoncé définit, la question interroge).
+"""  # noqa: E501 — texte normatif verbatim (valeur injectée telle quelle, accolades SIMPLES)
+
+FGQ_SPEC = """\
+FORMAT QAT (questionType FGQ — question à champ(s) libre(s) ordonné(s)) — NORMATIF :
+
+:::::{question}
+:questionType: FGQ
+:questionId: N
+:questionIndex: N
+:solution: [["ord","${{v1Aff}}$","${{v2Aff}}$"],["0","0"]]
+
+::::{questionStatement}
+<énoncé auto-suffisant>
+
+<LIGNE VIDE obligatoire avant le premier {input}>
+$x_1 =$ {input}`||110` $\\qquad x_2 =$ {input}`||110`
+::::
+
+::::{questionHint}
+<indice — vide ou verbatim source>
+::::
+
+::::{displayedSolution}
+$x_1 = {{v1Aff}}$, $\\quad x_2 = {{v2Aff}}$
+::::
+
+::::{detailedSolution}
+<solution détaillée>
+::::
+
+::::{weightDistribution}
+:logic: 15
+:abstraction: 20
+:reasoning: 20
+:calculation: 45
+::::
+:::::
+
+RÈGLES FGQ DURES :
+  • `:solution:` DIRECTEMENT dans le champ (jamais construite dans une variable
+    Python), juste après `:questionIndex:`. Format [["ord","<v1>",…],["0",…]].
+  • ARITÉ STRICTE : nb de {input} == nb de valeurs dans "ord" == nb de
+    tolérances. Tolérance TOUJOURS "0" (exacte).
+  • Un `{{varAff}}` par valeur dynamique dans `:solution:` (variable NUE).
+  • ORDRE : les valeurs de "ord" suivent l'ordre d'apparition des {input}
+    dans l'énoncé. Plusieurs solutions (racines…) → ÉNONCER l'ordre (« de la
+    plus petite à la plus grande ») et le respecter dans "ord" ET dans
+    displayedSolution.
+  • Chaque {input} est INTRODUIT PAR UN LABEL ($x =$ {input}`||110`),
+    jamais nu, jamais collé à la prose ; LIGNE VIDE avant le premier {input}.
+  • Ordre des blocs : questionStatement → questionHint → displayedSolution →
+    detailedSolution → weightDistribution.
+  • Valeurs EXACTES (fractions, \\ln, \\sqrt, +\\infty…) — JAMAIS de décimales
+    approchées dans `:solution:`.
+  • REPLI MCQ : si une question n'est PAS auto-corrigeable en champ libre
+    (réponse avec fonction abstraite, vrai/faux, matrice à dimension VARIABLE),
+    produis cette question en MCQ (format ci-contre) — une sortie QAT peut être
+    mixte FGQ + MCQ. Ne force JAMAIS un champ libre ingérable.
+
+MATRICES EN QAT (PIÈGE plateforme) :
+  • `pxsl_matrix` est INTERDIT dans un champ `:solution:` (le rendu
+    \\left[\\begin{array}… ne matche pas le widget). Si champ unique matrice :
+    variable calculée avec latex(M, mat_delim='', mat_str='pmatrix') (FR)
+    ou mat_str='bmatrix' (EN), injectée nue.
+  • Dimension variable ⇒ repli MCQ pour cette question.
+
+L'ÉNONCÉ NE DONNE JAMAIS LA RÉPONSE (l'énoncé définit, la question interroge).
+"""  # noqa: E501 — texte normatif verbatim (valeur injectée telle quelle, accolades SIMPLES)
+
+# Prompt de génération d'une déclinaison (QCM ou QAT) — même mécanique par
+# paires que la pythonisation ; le champ {decl_spec} reçoit MCQ_SPEC ou FGQ_SPEC.
+STEP_DECLINAISON_PROMPT = """\
+Tu déclines un exercice PyxiScience MyST en version {decl_label}, niveau {niveau}.
+L'exercice source (statique OU déjà pythonisé) est fourni ; tu produis la
+déclinaison RANDOMISÉE (bloc Python terminé par `globals()` + injections),
+au format plateforme EXACT ci-dessous.
+
+═══════════════════════════════════════════════════════════════════════════
+ CONVENTIONS PLATEFORME (identiques à la pythonisation — NON NÉGOCIABLES)
+═══════════════════════════════════════════════════════════════════════════
+  • Bloc Python : 4 backticks ````{{python}} … ```` terminé par `globals()`.
+  • Injections `{{{{ }}}}` : UNIQUEMENT des noms de variables NUS camelCase
+    suffixe `Aff` — JAMAIS d'appel de fonction, de calcul, d'underscore, ni
+    d'accès dict. Tout se pré-calcule dans le bloc Python.
+  • `{{{{ }}}}` et les maths TOUJOURS HORS des rôles {{fr}}`…`{{en}}`…` (un
+    placeholder dans un rôle ne s'évalue PAS — texte cassé).
+  • Règle du `$` collé à un chiffre : préfixe `${{}}`. Décimales localisées
+    (virgule FR / point EN). `latex(expr, **config_standard)`.
+  • `:questionId:`/`:questionIndex:` contigus dès 0.
+  • Interdits : \\py{{}}, \\qcm, \\qat, \\qcl, \\right/\\wrong (légacy),
+    \\begin{{align*}}, \\displaystyle, \\[ \\], $$.
+
+FIDÉLITÉ À LA SOURCE :
+  • 1 question source → 1 question déclinée. NE JAMAIS inventer de
+    sous-questions ni enrichir l'énoncé.
+  • L'énoncé ne doit JAMAIS donner la réponse (l'énoncé définit, la question
+    interroge).
+  • detailedSolution : VERBATIM de la source si elle existe (seules les valeurs
+    littérales deviennent des {{{{varAff}}}}), sinon rédigée sobrement.
+  • Source DÉJÀ PYTHONISÉE : recopie son bloc Python À L'IDENTIQUE (octet pour
+    octet), puis ajoute `# === Ajouts déclinaison {decl_label} ===` suivi des
+    NOUVELLES variables (distracteurs/solutions), AVANT le `globals()` final.
+  • weightDistribution : repris de la question source si présent, sinon le
+    barème par défaut du format ci-dessous (somme = 100 TOUJOURS).
+
+═══════════════════════════════════════════════════════════════════════════
+ SPÉCIFICATION DU FORMAT {decl_label}
+═══════════════════════════════════════════════════════════════════════════
+{decl_spec}
+
+═══════════════════════════════════════════════════════════════════════════
+ EXEMPLE CANONIQUE COMPLET (structure et conventions à imiter)
+═══════════════════════════════════════════════════════════════════════════
+{fewshot}
+
+═══════════════════════════════════════════════════════════════════════════
+ CATALOGUE PyxiScience (helpers à utiliser DANS le bloc Python)
+═══════════════════════════════════════════════════════════════════════════
+{functions}
+
+═══════════════════════════════════════════════════════════════════════════
+ CONTEXTE
+═══════════════════════════════════════════════════════════════════════════
+
+EN-TÊTE déjà finalisé (NE PAS reproduire) :
+{content}
+
+VARIABLES DÉTECTÉES :
+{analysis}
+
+BLOCS PRÉCÉDENTS (ne pas redéfinir leurs variables, ne pas les répéter) :
+{previous_blocks}
+
+SECTION À DÉCLINER ({range_label} / {nb_total}) :
+{current_segment}
+
+{lang_directive}
+
+═══════════════════════════════════════════════════════════════════════════
+ RÈGLES D'ASSEMBLAGE PAR PAIRE
+═══════════════════════════════════════════════════════════════════════════
+⚠️ TU PRODUIS UNIQUEMENT LE CONTENU DE CETTE PAIRE (les paires précédentes
+sont concaténées mécaniquement avant ta sortie).
+⚠️ EXACTEMENT {nb_current} bloc(s) `:::::{{question}}` — questionId/questionIndex
+CONTINUS depuis la paire précédente.
+⚠️ PAIRE 1 UNIQUEMENT : le bloc ````{{python}}```` (source recopiée si déjà
+pythonisée + ajouts déclinaison + `globals()`) puis l'énoncé général VERBATIM,
+AVANT la première question.
+⚠️ PAIRES SUIVANTES : ni énoncé, ni ré-imports ; petit bloc ````{{python}}````
+additionnel possible pour les nouvelles variables seulement.
+
+═══════════════════════════════════════════════════════════════════════════
+ CHECKLIST FINALE
+═══════════════════════════════════════════════════════════════════════════
+  □ Bloc ````{{python}}```` (4 backticks) terminé par `globals()`
+  □ CHAQUE `{{{{ }}}}` = variable NUE camelCase (Aff) — aucun appel/underscore
+  □ Aucun `{{{{ }}}}` NI maths à l'intérieur d'un rôle {{fr}}`…`/{{en}}`…`
+  □ MCQ : 1 seule bonne réponse (slot 1), « None » en dernier, options toutes
+    distinctes SUR TOUTES LES GRAINES, formatage identique
+  □ FGQ : arité #input == #valeurs == #tolérances ("0"), :solution: littérale,
+    ordre énoncé/"ord"/displayedSolution cohérents, labels devant chaque {{input}}
+  □ 1 question source → 1 question ; solutions source VERBATIM ; poids repris
+  □ IDs contigus dès 0 ; aucun motif interdit ; `\\%` pour les pourcentages
+"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Réparation post-harnais (NOUVEAU — 1 itération max)
 # ─────────────────────────────────────────────────────────────────────────────
 REPAIR_PROMPT = """\
@@ -554,9 +827,21 @@ RÈGLES DE CORRECTION :
     TIRAGE DÉGÉNÉRÉ — exclure la valeur fautive à la source
     (ex. `b = rd.randint(2, 5)` au lieu de `randint(1, 5)`, ou boucle de rejet
     `if b == 1: continue`). Ne PAS rafistoler le texte : corriger le tirage.
+    **EXCEPTION — texte pédagogique FIXE** qui enseigne précisément la règle de
+    l'exposant (`$b^{{0}} = 1$`, `$b^{{1}} = b$`) : réécrire SANS accolades
+    (`$b^0 = 1$`, `$b^1 = b$`) — rendu LaTeX identique pour un exposant à un
+    seul caractère, et conforme au corpus validé.
   • Injection non nue → pré-calculer en variable camelCase `…Aff`.
   • Le bloc {{python}} reste à 4 backticks et se termine par `globals()`.
   • Ne touche NI à `\\inftys`/`\\ds`/`\\dfrac`, NI à la prose des solutions.
+  • **QCM — collision d'options** (deux options rendues identiques sur une
+    graine) : contraindre le TIRAGE (rejet `while` sur les chaînes rendues) ou
+    changer la CONSTRUCTION du distracteur — jamais rafistoler le texte.
+  • **QCM — plusieurs/zéro `:isRightAnswer: true`** : exactement une, en slot 1.
+  • **FGQ — arité** : le nb de {{{{input}}}} doit égaler le nb de valeurs de
+    `"ord"` et le nb de tolérances ("0") dans `:solution:`.
+  • **`{{{{ }}}}` dans un rôle {{fr}}`…`/{{en}}`…`** : sortir l'injection du
+    rôle (elle ne s'évalue pas dedans) — découper le rôle autour.
 
 Réponds UNIQUEMENT avec l'exercice complet corrigé (de `````{{exercise}} à `````),
 sans préambule ni wrapper markdown.

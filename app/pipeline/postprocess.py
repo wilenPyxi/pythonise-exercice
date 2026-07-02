@@ -324,8 +324,19 @@ def fix_dollar_digit(exercise: str) -> tuple[str, list[dict]]:
        • `$` non échappé immédiatement suivi d'un chiffre  → `${}` + chiffre
        • `$` non échappé immédiatement suivi de `{{`       → `${}{{`
     Le groupe vide {} est invisible au rendu mais empêche la lecture
-    « montant en devise » qui désynchronise tout le `$…$`."""
+    « montant en devise » qui désynchronise tout le `$…$`.
+    EXCLUSION : les lignes `:solution:` (FGQ) — c'est un motif de
+    correspondance de réponse, pas du texte affiché ; un `${}` y casserait
+    la correction automatique."""
     masked, blocks = mask_python_blocks(exercise)
+    # Masque les lignes :solution: (elles ne doivent pas être réécrites).
+    sol_lines: list[str] = []
+
+    def _mask_sol(m: re.Match) -> str:
+        sol_lines.append(m.group(0))
+        return f"\x00SOLLINE{len(sol_lines) - 1}\x00"
+
+    masked = re.sub(r"(?m)^:solution:.*$", _mask_sol, masked)
     patches: list[dict] = []
 
     def _digit(m: re.Match) -> str:
@@ -350,6 +361,8 @@ def fix_dollar_digit(exercise: str) -> tuple[str, list[dict]]:
 
     masked = re.sub(r"(?<!\\)\$(?!\{)(\d)", _digit, masked)
     masked = re.sub(r"(?<!\\)\$\{\{", _inj, masked)
+    for i, line in enumerate(sol_lines):
+        masked = masked.replace(f"\x00SOLLINE{i}\x00", line)
     return unmask_python_blocks(masked, blocks), patches
 
 
@@ -603,6 +616,102 @@ def check_hardcoded_decimals_in_solutions(exercise: str) -> list[dict]:
                             "variation. Vérifier qu'elles sont injectées."),
             })
     return warnings
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Déclinaisons QCM/QAT — filets déterministes (mode `declinaisons`)
+# ─────────────────────────────────────────────────────────────────────────────
+
+QUESTION_BLOCK_RE = _QUESTION_BLOCK_RE          # réutilisé par le harnais étendu
+MCQ_ANSWER_RE = re.compile(
+    r"::::\{mcqAnswer\}\s*\n:isRightAnswer:\s*(true|false)\s*\n(.*?)\n::::",
+    re.DOTALL,
+)
+_NONE_OPTION_RE = re.compile(r"Aucune de ces réponses|None of these answers", re.IGNORECASE)
+
+
+def fix_none_option_last(exercise: str) -> tuple[str, int]:
+    """MCQ : l'option « Aucune de ces réponses / None » doit être le DERNIER
+    mcqAnswer de sa question — on la déplace si besoin (filet déterministe)."""
+    moved = {"n": 0}
+
+    def _fix_question(qm: re.Match) -> str:
+        block = qm.group(0)
+        answers = list(MCQ_ANSWER_RE.finditer(block))
+        if len(answers) < 2:
+            return block
+        none_idx = [i for i, a in enumerate(answers) if _NONE_OPTION_RE.search(a.group(2))]
+        if not none_idx or none_idx[-1] == len(answers) - 1:
+            return block
+        i = none_idx[-1]
+        none_text = answers[i].group(0)
+        # retire l'option None puis la réinsère après le dernier mcqAnswer
+        block2 = block.replace(none_text + "\n\n", "", 1).replace(none_text, "", 1)
+        last = list(MCQ_ANSWER_RE.finditer(block2))[-1]
+        block2 = block2[:last.end()] + "\n\n" + none_text + block2[last.end():]
+        moved["n"] += 1
+        return block2
+
+    new = QUESTION_BLOCK_RE.sub(_fix_question, exercise)
+    return new, moved["n"]
+
+
+def fix_mcq_answer_aliases(exercise: str) -> tuple[str, int]:
+    """Normalise les blocs d'options MCQ mal nommés/incomplets (vus en prod) :
+      • `::::{mcqOption}` / `::::{mcqChoice}` → `::::{mcqAnswer}` ;
+      • bloc mcqAnswer SANS ligne `:isRightAnswer:` → insère `false` (défaut)."""
+    fixed = {"n": 0}
+    out, n_alias = re.subn(r"(?m)^::::\{mcq(?:Option|Choice)\}", "::::{mcqAnswer}", exercise)
+    fixed["n"] += n_alias
+
+    def _ensure_flag(m: re.Match) -> str:
+        head, rest = m.group(1), m.group(2)
+        if rest.lstrip().startswith(":isRightAnswer:"):
+            return m.group(0)
+        fixed["n"] += 1
+        return f"{head}:isRightAnswer: false\n{rest}"
+
+    out = re.sub(r"(?ms)^(::::\{mcqAnswer\}\n)(.*?)(?=^::::$)",
+                 lambda m: _ensure_flag(m), out)
+    return out, fixed["n"]
+
+
+def merge_decl_python_blocks(exercise: str) -> tuple[str, int]:
+    """DÉCLINAISONS : la spec impose UN SEUL bloc {python}. Fusionne les blocs
+    additionnels dans le bloc principal (ordre préservé, un seul `globals()`
+    final) — SAUF si un bloc ultérieur RE-TIRE de l'aléatoire (`rd.`/`random.`) :
+    re-tirage = bug sémantique (valeurs incohérentes entre questions), on le
+    laisse en place pour que le harnais le signale et que la réparation LLM
+    corrige à la source."""
+    blocks = list(PYTHON_FENCE_RE.finditer(exercise))
+    if len(blocks) < 2:
+        return exercise, 0
+    extras = blocks[1:]
+    if any(re.search(r"\brd\.|(?<!_)\brandom\.", m.group("code")) for m in extras):
+        return exercise, 0          # re-tirage suspect → laisser le harnais trancher
+
+    main = blocks[0]
+    parts = [re.sub(r"(?m)^\s*globals\(\)\s*$", "", main.group("code")).rstrip()]
+    for m in extras:
+        code = re.sub(r"(?m)^\s*globals\(\)\s*$", "", m.group("code")).strip()
+        if code:
+            parts.append(code)
+    merged_code = "\n\n".join(parts) + "\n\nglobals()"
+
+    # Supprime les blocs additionnels (indices inversés), puis remplace le principal.
+    out = exercise
+    for m in reversed(extras):
+        out = out[:m.start()] + out[m.end():]
+    m0 = PYTHON_FENCE_RE.search(out)
+    out = (out[:m0.start()]
+           + f"{m0.group('open')}{{python}}\n{merged_code}\n{m0.group('open')}"
+           + out[m0.end():])
+    return re.sub(r"\n{3,}", "\n\n", out), len(extras)
+
+
+# (Les contrôles statiques MCQ/FGQ — {{}} dans un rôle, :solution:, résidus
+#  légacy — vivent dans validation/harness.py::check_declinaison_static :
+#  une seule source de vérité pour le verdict.)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

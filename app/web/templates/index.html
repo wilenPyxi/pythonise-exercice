@@ -344,6 +344,24 @@
 
       <div class="meta">
         <div>
+          <label class="field-label" for="mode-select">Mode</label>
+          <select id="mode-select" onchange="onModeChange()">
+            <option value="pythonise">Pythonisation</option>
+            <option value="declinaisons">Déclinaisons (QCM/QAT)</option>
+          </select>
+        </div>
+        <div id="decl-types" hidden>
+          <label class="field-label">Types de déclinaison</label>
+          <div style="display:flex;gap:14px;padding:9px 2px;font-size:13px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="type-qcm" checked> QCM
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="type-qat"> QAT
+            </label>
+          </div>
+        </div>
+        <div>
           <label class="field-label" for="model-select">Modèle</label>
           <select id="model-select" aria-label="Modèle LLM"></select>
         </div>
@@ -476,6 +494,12 @@ function prettyModelName(slug) {
     .replace(/^claude-/, "Claude ").replace(/^gpt-/, "GPT-")
     .replace(/^gemini-/, "Gemini ").replace(/-/g, " ")
     .replace(/\b\w/g, c => c.toUpperCase()).replace(/Gpt/g, "GPT");
+}
+
+/* ─── Mode (pythonisation / déclinaisons) ─── */
+function onModeChange() {
+  const decl = document.getElementById("mode-select").value === "declinaisons";
+  document.getElementById("decl-types").hidden = !decl;
 }
 
 /* ─── Tabs ─── */
@@ -678,7 +702,15 @@ function setMetaResult(entry) {
   const cost = r.cost ? `<span class="pill pill--info">${r.cost.usd.toFixed(4)} $ · ${r.cost.requests} appels</span>` : "";
   const lang = r.lang ? `<span class="pill pill--info">langue : ${escapeHtml(r.lang.source)} → ${escapeHtml(r.lang.target)} (${escapeHtml(r.lang.action)})</span>` : "";
   const dur = r.duration_s ? `<span class="pill pill--info">${r.duration_s}s</span>` : "";
-  el.innerHTML = verdict + cost + lang + dur;
+  let decl = "";
+  if (r.decl_type) {
+    const label = r.decl_type === "qcm" ? "QCM" : "QAT";
+    decl = `<span class="pill pill--info">déclinaison : ${label}</span>`;
+    if (r.decl_type === "qat" && (r.exercise || "").includes(":questionType: MCQ")) {
+      decl += `<span class="pill pill--info">repli MCQ partiel</span>`;
+    }
+  }
+  el.innerHTML = verdict + decl + cost + lang + dur;
 }
 
 /* Sélecteur de fichier (batch) */
@@ -721,12 +753,24 @@ async function run() {
   }
   if (!files.length) { setStatus("error", "Saisissez un énoncé ou chargez des fichiers .md."); return; }
 
+  const mode = document.getElementById("mode-select").value;
   const payload = {
     files,
     level: document.getElementById("level").value,
     lang: document.getElementById("lang-select").value,
     model_idx: Number(document.getElementById("model-select").value || 0),
+    mode,
   };
+  if (mode === "declinaisons") {
+    payload.types = {
+      qcm: document.getElementById("type-qcm").checked,
+      qat: document.getElementById("type-qat").checked,
+    };
+    if (!payload.types.qcm && !payload.types.qat) {
+      setStatus("error", "Mode Déclinaisons : coche au moins un type (QCM ou QAT).");
+      return;
+    }
+  }
 
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   currentJobId = null;

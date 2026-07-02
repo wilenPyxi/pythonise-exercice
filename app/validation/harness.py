@@ -65,18 +65,25 @@ def install_pyxiscience_stubs() -> None:
         # sympy.latex (qui rejette toute clé inconnue).
         return {}
 
+    # Liste canonique partagée avec la sandbox (les deux systèmes de stubs
+    # partagent sys.modules — le premier installé sert aux deux).
+    from app.validation.sandbox import KNOWN_PXS_HELPERS
+
     def _make_module(name: str) -> types.ModuleType:
         mod = types.ModuleType(name)
 
         def __getattr__(attr):  # PEP 562
             if attr == "pxs_config":
                 return _pxs_config
+            if attr == "pxs_variation_number":
+                return 1
             # Classe si CamelCase OU motif pxs_Xxx (pxs_Interval, pxs_Plotable…)
             if attr and (attr[0].isupper() or re.match(r"pxs_[A-Z]", attr)):
                 return _Universal
             return _passthrough
 
         mod.__getattr__ = __getattr__
+        mod.__all__ = list(KNOWN_PXS_HELPERS)
         return mod
 
     root = _make_module("pyxiscience")
@@ -184,6 +191,132 @@ def scan_forbidden(body: str) -> list[str]:
     return errs
 
 
+# ── Contrôles déclinaisons QCM/QAT (mode `declinaisons`) ─────────────────────
+
+_QUESTION_RE = re.compile(r":::::\{question\}.*?:::::", re.DOTALL)
+_MCQ_ANSWER_RE = re.compile(
+    r"::::\{mcqAnswer\}\s*\n:isRightAnswer:\s*(true|false)\s*\n(.*?)\n::::",
+    re.DOTALL,
+)
+_NONE_OPTION_RE = re.compile(r"Aucune de ces réponses|None of these answers", re.IGNORECASE)
+_SOLUTION_FIELD_RE = re.compile(r"(?m)^:solution:[ \t]*(.+)$")
+_INPUT_RE = re.compile(r"\{input\}`")
+_QTYPE_RE = re.compile(r":questionType:\s*(\w+)")
+
+
+def has_declinaison_questions(text: str) -> bool:
+    return bool(re.search(r":questionType:\s*(MCQ|FGQ)\b", text))
+
+
+_LEGACY_PATTERNS = [
+    (re.compile(r"\\py\{"), r"résidu légacy `\py{`"),
+    (re.compile(r"\\qcm\b|\\qat\b|\\qcl\b"), r"résidu légacy `\qcm`/`\qat`/`\qcl`"),
+    (re.compile(r"\\input\{null\}"), r"résidu légacy `\input{null}`"),
+    (re.compile(r"\\begin\{align\*?\}"), r"`\begin{align*}` interdit (utiliser equation*)"),
+    (re.compile(r"(?<!\\)\$\$"), r"`$$` interdit (utiliser equation*)"),
+]
+
+
+def check_declinaison_static(text: str) -> list[str]:
+    """Contrôles statiques MCQ/FGQ (indépendants des graines)."""
+    import json as _json
+    errs: list[str] = []
+    body = strip_python_blocks(text)
+
+    # {{ }} dans un rôle bilingue → ne s'évalue pas.
+    for m in re.finditer(r"\{(?:fr|en)\}`([^`]*)`", body):
+        if "{{" in m.group(1):
+            errs.append(f"injection `{{{{…}}}}` dans un rôle bilingue : …{m.group(0)[:80]}…")
+            break
+
+    # Résidus de l'ancienne syntaxe plateforme.
+    errs += [msg for rx, msg in _LEGACY_PATTERNS if rx.search(body)]
+
+    # UN SEUL bloc {python} en déclinaison (un bloc additionnel qui RE-TIRE de
+    # l'aléatoire rendrait les valeurs incohérentes entre questions ; les blocs
+    # sans re-tirage sont fusionnés en amont par merge_decl_python_blocks).
+    n_blocks = len(PY_FENCE_ANY_RE.findall(text))
+    if n_blocks > 1:
+        errs.append(f"{n_blocks} blocs {{python}} (un seul attendu en déclinaison — "
+                    "bloc additionnel avec re-tirage aléatoire probable)")
+
+    # Approximations dans :solution: (valeurs exactes uniquement).
+    for m in _SOLUTION_FIELD_RE.finditer(text):
+        if "\\approx" in m.group(1) or "≈" in m.group(1):
+            errs.append("approximation (≈) dans un champ `:solution:` — valeurs exactes uniquement")
+            break
+
+    for qi, qm in enumerate(_QUESTION_RE.finditer(text)):
+        q = qm.group(0)
+        tm = _QTYPE_RE.search(q)
+        qtype = tm.group(1) if tm else "?"
+
+        if qtype == "MCQ":
+            answers = list(_MCQ_ANSWER_RE.finditer(q))
+            n_true = sum(1 for a in answers if a.group(1) == "true")
+            if n_true != 1:
+                errs.append(f"question {qi} (MCQ) : {n_true} option(s) `:isRightAnswer: true` (attendu : exactement 1)")
+            if not (3 <= len(answers) <= 6):
+                errs.append(f"question {qi} (MCQ) : {len(answers)} options (attendu : 3 à 5)")
+            none_idx = [i for i, a in enumerate(answers) if _NONE_OPTION_RE.search(a.group(2))]
+            if none_idx and none_idx[-1] != len(answers) - 1:
+                errs.append(f"question {qi} (MCQ) : option « None/Aucune » pas en dernière position")
+            if _SOLUTION_FIELD_RE.search(q) or _INPUT_RE.search(q):
+                errs.append(f"question {qi} (MCQ) : `:solution:`/`{{input}}` interdits en MCQ")
+
+        elif qtype == "FGQ":
+            sol = _SOLUTION_FIELD_RE.search(q)
+            n_inputs = len(_INPUT_RE.findall(q))
+            if not sol:
+                errs.append(f"question {qi} (FGQ) : champ `:solution:` manquant")
+                continue
+            if n_inputs == 0:
+                errs.append(f"question {qi} (FGQ) : aucun `{{input}}` dans l'énoncé")
+            raw = sol.group(1).strip()
+            if "pxsl_matrix" in raw:
+                errs.append(f"question {qi} (FGQ) : `pxsl_matrix` dans `:solution:` (interdit)")
+            # Parse JSON structurel : on remplace les {{var}} par un littéral neutre.
+            probe = INJECTION_RE.sub("V", raw)
+            try:
+                data = _json.loads(probe)
+                assert (isinstance(data, list) and len(data) == 2
+                        and isinstance(data[0], list) and isinstance(data[1], list)
+                        and data[0] and data[0][0] in ("ord", "CL"))
+                n_vals = len(data[0]) - 1
+                n_tols = len(data[1])
+                if not (n_vals == n_tols == n_inputs):
+                    errs.append(f"question {qi} (FGQ) : arité incohérente — "
+                                f"{n_inputs} input(s), {n_vals} valeur(s), {n_tols} tolérance(s)")
+                if any(str(t).strip() != "0" for t in data[1]):
+                    errs.append(f"question {qi} (FGQ) : tolérance ≠ \"0\"")
+            except Exception:
+                errs.append(f"question {qi} (FGQ) : `:solution:` non parseable en JSON : {raw[:80]}")
+
+    return errs
+
+
+def check_mcq_collisions(text: str, env: dict) -> list[str]:
+    """Pour UNE graine : deux options d'un même MCQ rendues identiques = échec.
+    (Le piège n°1 des QCM randomisés — un distracteur « erreur type » peut
+    devenir égal à la bonne réponse sur certaines graines.)"""
+    errs: list[str] = []
+    for qi, qm in enumerate(_QUESTION_RE.finditer(text)):
+        q = qm.group(0)
+        if not re.search(r":questionType:\s*MCQ\b", q):
+            continue
+        rendered: list[str] = []
+        for a in _MCQ_ANSWER_RE.finditer(q):
+            r, _unres = render_body(a.group(2), env)
+            rendered.append(re.sub(r"\s+", " ", r).strip())
+        seen: dict[str, int] = {}
+        for i, r in enumerate(rendered):
+            if r in seen:
+                errs.append(f"question {qi} (MCQ) : options {seen[r]} et {i} identiques après rendu : « {r[:70]} »")
+            else:
+                seen[r] = i
+    return errs
+
+
 # ── Rendu (substitution des injections) ──────────────────────────────────────
 
 def render_body(body_tmpl: str, env: dict) -> tuple[str, list[str]]:
@@ -218,6 +351,9 @@ def validate_text(text: str, seeds: int = 100) -> dict:
       }
     """
     static_errors = check_injection_tokens(text) + check_question_ids(text)
+    declinaison = has_declinaison_questions(text)
+    if declinaison:
+        static_errors += check_declinaison_static(text)
     code = extract_python_code(text)
     if code is None:
         static_errors.append("aucun bloc `{python}` trouvé")
@@ -229,6 +365,7 @@ def validate_text(text: str, seeds: int = 100) -> dict:
         "n_exec_errors": 0,
         "n_unresolved": 0,
         "n_forbidden": 0,
+        "n_mcq_collisions": 0,
         "first_failures": [],
     }
     if code is None:
@@ -261,11 +398,22 @@ def validate_text(text: str, seeds: int = 100) -> dict:
             report["n_unresolved"] += 1
             if len(failures) < 8:
                 failures.append(f"seed {s} : variable(s) non résolue(s) : {sorted(set(unresolved))}")
-        fb = scan_forbidden(rendered)
+        # Les lignes `:solution:` (FGQ) sont des motifs de correspondance de
+        # réponse, pas du texte affiché : exclues du scan des motifs interdits
+        # (`$5$` y est légitime — confirmé par les exemples validés). Leur
+        # format est contrôlé séparément (JSON, arité, exactitude).
+        scan_target = re.sub(r"(?m)^:solution:.*$", "", rendered)
+        fb = scan_forbidden(scan_target)
         if fb:
             report["n_forbidden"] += 1
             if len(failures) < 8:
                 failures.append(f"seed {s} : motif interdit : {fb[0]}")
+        if declinaison:
+            mc = check_mcq_collisions(text, env)
+            if mc:
+                report["n_mcq_collisions"] += 1
+                if len(failures) < 8:
+                    failures.append(f"seed {s} : collision d'options MCQ : {mc[0]}")
 
     report["first_failures"] = failures
     report["ok"] = (
@@ -273,6 +421,7 @@ def validate_text(text: str, seeds: int = 100) -> dict:
         and report["n_exec_errors"] == 0
         and report["n_unresolved"] == 0
         and report["n_forbidden"] == 0
+        and report["n_mcq_collisions"] == 0
     )
     return report
 
@@ -289,5 +438,7 @@ def format_report(report: dict) -> str:
         lines.append(f"[INJECTION] {report['n_unresolved']}/{n} graines avec variables non résolues")
     if report["n_forbidden"]:
         lines.append(f"[INTERDITS] {report['n_forbidden']}/{n} graines avec motif interdit")
+    if report.get("n_mcq_collisions"):
+        lines.append(f"[MCQ] {report['n_mcq_collisions']}/{n} graines avec collision d'options")
     lines.extend(f"  • {f}" for f in report["first_failures"])
     return "\n".join(lines) if lines else "VERT"

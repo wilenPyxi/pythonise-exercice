@@ -39,7 +39,7 @@ from app.rag.catalogue import catalogue_for
 from app.pipeline import postprocess as pp
 from app.pipeline.analyze import run_analysis_phase
 from app.pipeline.audit import run_audit
-from app.pipeline.fewshots import fewshot_for
+from app.pipeline.fewshots import fewshot_for, fewshot_for_declinaison
 from app.pipeline.generate import (
     assemble_exercise,
     build_exercise_metadata,
@@ -105,21 +105,31 @@ def run_exercise(
     model_idx: int = 1,
     lang: str = "fr",
     set_step: Optional[Callable[[str], None]] = None,
+    decl_type: Optional[str] = None,
+    shared_phase: Optional[tuple] = None,
 ) -> dict:
     """
-    Pythonise UN exercice. Retourne le dict résultat (contrat UI) :
+    Traite UN exercice. `decl_type=None` = pythonisation (flux historique) ;
+    `decl_type ∈ {"qcm","qat"}` = mode déclinaisons (même pipeline, prompt et
+    harnais étendus). `shared_phase` = résultat de run_analysis_phase à
+    RÉUTILISER (déclinaisons QCM+QAT d'une même source : une seule analyse).
+
+    Retourne le dict résultat (contrat UI) :
       exercise, pair_blocks, analysis, functions, notions, audit_patches,
       warnings, harness {ok, summary, seeds}, lang {source, target, action},
-      cost {usd, eur, requests}, duration_s
+      cost {usd, eur, requests}, duration_s [, decl_type]
     """
     t0 = time.time()
     cost_before = cost_snapshot()
     _step = set_step or (lambda label: None)
 
-    # ── 1. Analyse + notions + RAG (parallèle) ───────────────────────────────
-    _step("Analyse + notions + catalogue RAG (en parallèle)…")
-    analysis, notions_ctx, lists_of_notions, functions_ctx = run_analysis_phase(
-        content, model_idx)
+    # ── 1. Analyse + notions + RAG (parallèle ; partagée en mode QCM+QAT) ────
+    if shared_phase is not None:
+        analysis, notions_ctx, lists_of_notions, functions_ctx = shared_phase
+    else:
+        _step("Analyse + notions + catalogue RAG (en parallèle)…")
+        analysis, notions_ctx, lists_of_notions, functions_ctx = run_analysis_phase(
+            content, model_idx)
 
     step1_targets = [r for r in (analysis.get("target_rules") or []) if isinstance(r, str)]
     target_rules = list(dict.fromkeys(TRUNK_RULES + step1_targets))
@@ -133,7 +143,8 @@ def run_exercise(
 
     # ── 2. Génération par paires ─────────────────────────────────────────────
     metadata, enonce, question_segments = split_original_questions(content)
-    exercise_header = build_exercise_metadata(metadata, lists_of_notions, analysis, level)
+    exercise_header = build_exercise_metadata(metadata, lists_of_notions, analysis,
+                                              level, decl_type=decl_type)
 
     # Contexte fonctions = catalogue CURÉ (domaine détecté) + hits RAG FAISS.
     # Le catalogue curé donne « quel helper pour quel besoin » + couvre les
@@ -145,6 +156,8 @@ def run_exercise(
         if functions_ctx else "",
     ])) or "Aucune fonction spécifique détectée."
 
+    fewshot = (fewshot_for_declinaison(decl_type) if decl_type
+               else fewshot_for(analysis))
     pair_blocks = generate_pair_blocks(
         content=content,
         exercise_header=exercise_header,
@@ -152,13 +165,14 @@ def run_exercise(
         question_segments=question_segments,
         analysis=analysis,
         functions_ctx=functions_combined,
-        fewshot=fewshot_for(analysis),
+        fewshot=fewshot,
         targeted_rules_digest=targeted_rules_digest,
         property_constraints_text=property_constraints_text,
         level=level,
         model_idx=model_idx,
         lang=lang,
         set_step=_step,
+        decl_type=decl_type,
     )
 
     # ── 3. Post-traitements déterministes ────────────────────────────────────
@@ -246,6 +260,39 @@ def run_exercise(
 
     myst_exercise, dollar_patches = pp.fix_dollar_digit(myst_exercise)
     audit_patches.extend(dollar_patches)
+
+    if decl_type:
+        # Filet : alias d'option MCQ mal nommés / :isRightAnswer: manquant
+        # (le repli MCQ en QAT est concerné aussi).
+        myst_exercise, alias_fixed = pp.fix_mcq_answer_aliases(myst_exercise)
+        if alias_fixed:
+            audit_patches.append({
+                "rule": "MCQ", "location": "(mcqOption / :isRightAnswer:)",
+                "fix": f"{alias_fixed} bloc(s) d'option normalisé(s)",
+                "message": "Blocs d'options MCQ normalisés (mcqOption→mcqAnswer, :isRightAnswer: false par défaut).",
+                "iteration": 0,
+            })
+        # Déclinaisons : UN SEUL bloc {python} — fusion des blocs additionnels
+        # sans re-tirage (re-tirage → laissé au harnais + réparation LLM).
+        myst_exercise, merged = pp.merge_decl_python_blocks(myst_exercise)
+        if merged:
+            audit_patches.append({
+                "rule": "3.1", "location": "(blocs python additionnels)",
+                "fix": f"{merged} bloc(s) fusionné(s) dans le bloc principal",
+                "message": "Déclinaison : blocs {python} additionnels fusionnés (un seul bloc, spec).",
+                "iteration": 0,
+            })
+
+    if decl_type == "qcm":
+        # Filet MCQ : l'option « None/Aucune » doit être le dernier mcqAnswer.
+        myst_exercise, none_moved = pp.fix_none_option_last(myst_exercise)
+        if none_moved:
+            audit_patches.append({
+                "rule": "MCQ", "location": "(option None)",
+                "fix": f"{none_moved} option(s) « None » déplacée(s) en dernier",
+                "message": "Option « Aucune de ces réponses / None » repositionnée en dernière position.",
+                "iteration": 0,
+            })
 
     # Les warnings 6.1 du LLM deviennent du bruit une fois l'auto-lift passé.
     if not pp.INJECTION_RE.search(myst_exercise) or not any(
@@ -363,12 +410,18 @@ def run_exercise(
         candidate, _ = pp.auto_lift_injections(candidate)
         candidate, _ = pp.rename_underscore_injections(candidate)
         candidate, _ = pp.fix_dollar_digit(candidate)
+        if decl_type:
+            candidate, _ = pp.fix_mcq_answer_aliases(candidate)
+            candidate, _ = pp.merge_decl_python_blocks(candidate)
+        if decl_type == "qcm":
+            candidate, _ = pp.fix_none_option_last(candidate)
         candidate, _ = pp.renumber_question_ids(candidate)
         candidate_report = harness.validate_text(candidate, seeds=HARNESS_GATE_SEEDS)
 
         def _badness(r: dict) -> int:
             return (len(r["static_errors"]) + r["n_exec_errors"]
-                    + r["n_unresolved"] + r["n_forbidden"])
+                    + r["n_unresolved"] + r["n_forbidden"]
+                    + r.get("n_mcq_collisions", 0))
 
         if candidate_report["ok"] or _badness(candidate_report) < _badness(report):
             myst_exercise, report = candidate, candidate_report
@@ -401,6 +454,49 @@ def run_exercise(
             "summary": harness.format_report(report),
         },
         "lang": lang_info,
+        "decl_type": decl_type,
         "cost": cost_delta(cost_before),
         "duration_s": round(time.time() - t0, 1),
     }
+
+
+def run_declinaisons(
+    content: str,
+    filename: str = "exercise.md",
+    level: str = "",
+    model_idx: int = 1,
+    lang: str = "fr",
+    types: Optional[list] = None,
+    set_step: Optional[Callable[[str], None]] = None,
+) -> list[tuple[str, dict]]:
+    """
+    Mode `declinaisons` : produit une déclinaison par type coché (qcm/qat).
+    L'analyse + notions + RAG sont calculées UNE SEULE fois et partagées entre
+    les types (aucun appel LLM redondant). Retourne [(decl_type, result), …].
+    Un échec sur un type n'empêche pas l'autre (l'appelant gère l'erreur).
+    """
+    _step = set_step or (lambda label: None)
+    types = [t for t in (types or []) if t in ("qcm", "qat")] or ["qcm"]
+
+    _step("Analyse + notions + catalogue RAG (partagés QCM/QAT)…")
+    shared = run_analysis_phase(content, model_idx)
+
+    out: list[tuple[str, dict]] = []
+    for decl_type in types:
+        label = "QCM" if decl_type == "qcm" else "QAT"
+
+        def step_with_type(msg: str, _label=label):
+            _step(f"[{_label}] {msg}")
+
+        result = run_exercise(
+            content=content,
+            filename=filename,
+            level=level,
+            model_idx=model_idx,
+            lang=lang,
+            set_step=step_with_type,
+            decl_type=decl_type,
+            shared_phase=shared,
+        )
+        out.append((decl_type, result))
+    return out

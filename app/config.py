@@ -70,6 +70,12 @@ HARNESS_REPAIR_MAX   = 2         # boucles de réparation LLM si la porte est ro
 # ── Langue cible ─────────────────────────────────────────────────────────────
 DEFAULT_LANG = "fr"              # "fr" | "en" | "both"
 
+# ── Modes (pythonisation / déclinaisons QCM-QAT) ─────────────────────────────
+DEFAULT_MODE = "pythonise"       # "pythonise" | "declinaisons"
+DECLINAISON_TYPES = ("qcm", "qat")
+MCQ_NUM_OPTIONS = 5              # 1 correcte + 3 distracteurs + « None » en dernier
+QAT_FALLBACK_TO_MCQ = True       # question non auto-corrigeable en champ libre → MCQ
+
 # ── Serveur / jobs ───────────────────────────────────────────────────────────
 JOB_TTL = 1800                   # s avant purge d'un job terminé
 # HOST/PORT pilotables par l'environnement (déploiement). En local : 127.0.0.1.

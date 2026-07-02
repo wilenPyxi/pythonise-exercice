@@ -21,7 +21,13 @@ from app.pipeline.postprocess import (
     normalize_python_fences,
     strip_fences,
 )
-from app.pipeline.prompts import STEP_PAIR_PROMPT, SYSTEM_PROMPT
+from app.pipeline.prompts import (
+    FGQ_SPEC,
+    MCQ_SPEC,
+    STEP_DECLINAISON_PROMPT,
+    STEP_PAIR_PROMPT,
+    SYSTEM_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +130,7 @@ def build_exercise_metadata(
     lists_of_notions: str,
     analysis: dict | None = None,
     level: str = "",
+    decl_type: str | None = None,
 ) -> str:
     """Construit TOUJOURS un en-tête `{exercise}` complet et bien formé
     (5 backticks englobant tout l'exercice — le bloc Python à 4 backticks vient
@@ -142,6 +149,11 @@ def build_exercise_metadata(
     src = _parse_source_options(metadata)
 
     title = src.get("title") or analysis.get("exercise_title") or "Exercice"
+    if decl_type:
+        # Suffixe de traçabilité (convention des exemples validés : « - MCQ »).
+        suffix = " - MCQ" if decl_type == "qcm" else " - QAT"
+        if not title.rstrip().endswith(suffix.strip()):
+            title = title.rstrip() + suffix
 
     nb_q = analysis.get("nb_questions") or 0
     try:
@@ -170,7 +182,12 @@ def build_exercise_metadata(
 
     fence = "`" * EXERCISE_FENCE_BACKTICKS
     lines = [f"{fence}{{exercise}}"]
-    lines += [f":{k}: {values[k]}".rstrip() for k in _HEADER_FIELDS]
+    for k in _HEADER_FIELDS:
+        lines.append(f":{k}: {values[k]}".rstrip())
+        # Déclinaison d'un exercice existant : tracer l'id source juste après :id:
+        # (convention des exemples validés : :originalExerciseId:).
+        if k == "id" and decl_type and src.get("id"):
+            lines.append(f":originalExerciseId: {src['id']}")
     return "\n".join(lines)
 
 
@@ -208,6 +225,10 @@ _LANG_DIRECTIVES = {
 }
 
 
+_DECL_LABELS = {"qcm": "QCM (MCQ)", "qat": "QAT (FGQ)"}
+_DECL_SPECS = {"qcm": MCQ_SPEC, "qat": FGQ_SPEC}
+
+
 def generate_pair_blocks(
     content: str,
     exercise_header: str,
@@ -222,20 +243,37 @@ def generate_pair_blocks(
     model_idx: int,
     lang: str = "auto",
     set_step: Optional[Callable[[str], None]] = None,
+    decl_type: Optional[str] = None,
 ) -> list[str]:
-    """Boucle de génération par paires (séquentielle). Retourne les blocs."""
+    """Boucle de génération par paires (séquentielle). Retourne les blocs.
+    `decl_type` (qcm|qat) bascule sur le prompt Déclinaisons — même mécanique
+    par paires, 1 question source → 1 question déclinée."""
     nb_questions = analysis.get("nb_questions", max(1, len(question_segments)))
     lang_directive = _LANG_DIRECTIVES.get(lang, _LANG_DIRECTIVES["auto"])
-    common = dict(
-        analysis=json.dumps(analysis, ensure_ascii=False, indent=2),
-        functions=functions_ctx or "Aucune fonction spécifique détectée.",
-        niveau=level or "non précisé",
-        targeted_rules=targeted_rules_digest,
-        property_constraints=property_constraints_text,
-        fewshot=fewshot,
-        lang_directive=lang_directive,
-        nb_total=nb_questions,
-    )
+    if decl_type:
+        prompt_tmpl = STEP_DECLINAISON_PROMPT
+        common = dict(
+            analysis=json.dumps(analysis, ensure_ascii=False, indent=2),
+            functions=functions_ctx or "Aucune fonction spécifique détectée.",
+            niveau=level or "non précisé",
+            fewshot=fewshot,
+            lang_directive=lang_directive,
+            nb_total=nb_questions,
+            decl_label=_DECL_LABELS[decl_type],
+            decl_spec=_DECL_SPECS[decl_type],
+        )
+    else:
+        prompt_tmpl = STEP_PAIR_PROMPT
+        common = dict(
+            analysis=json.dumps(analysis, ensure_ascii=False, indent=2),
+            functions=functions_ctx or "Aucune fonction spécifique détectée.",
+            niveau=level or "non précisé",
+            targeted_rules=targeted_rules_digest,
+            property_constraints=property_constraints_text,
+            fewshot=fewshot,
+            lang_directive=lang_directive,
+            nb_total=nb_questions,
+        )
 
     generated: list[str] = []
 
@@ -244,7 +282,7 @@ def generate_pair_blocks(
         if set_step:
             set_step("Génération (bloc Python + toutes les questions)…")
         raw = process_with_openrouter(
-            prompt=STEP_PAIR_PROMPT.format(
+            prompt=prompt_tmpl.format(
                 content=content,
                 previous_blocks="(aucun — première génération)",
                 nb_current=nb_questions,
@@ -272,7 +310,7 @@ def generate_pair_blocks(
             current_segment = enonce + "\n\n" + current_segment
 
         raw_pair = process_with_openrouter(
-            prompt=STEP_PAIR_PROMPT.format(
+            prompt=prompt_tmpl.format(
                 content=exercise_header,
                 previous_blocks=("\n\n".join(generated) if generated
                                  else "(aucun — première paire)"),

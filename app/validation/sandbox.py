@@ -78,10 +78,62 @@ class _StubObject:
         return f"_StubObject({self._args!r})"
 
 
+# Liste CANONIQUE des helpers connus (catalogue curé + corpus 222 + 33 exemples
+# déclinaisons). Sert au `__all__` des modules stub : `from X import *` ne
+# passe PAS par __getattr__ (PEP 562), il lit __all__. Partagée avec
+# validation/harness.py — NE PAS dupliquer ailleurs.
+KNOWN_PXS_HELPERS = [
+    "pxs_config", "pxsl_latex", "pxsl_sign", "pxsl_format_number",
+    "pxsl_latex_with_formatting", "pxsl_latex_avec_formatage",
+    "pxsl_latex_coefficient", "pxsl_to_rational_or_symbol",
+    "pxsl_solve_general_inequality", "pxsl_Rational",
+    "pxs_is_reductible_sqrt", "pxs_separate_factors",
+    "pxs_explain_IBP", "pxsl_par", "pxsl_final_sentence",
+    "pxsl_pow", "pxsl_matrix", "pxsl_mat", "pxsl_sum_matrix",
+    "pxsl_prod_scalar_matrix", "pxsl_prod_matrix", "pxsl_ax",
+    "pxsl_system_lin", "pxsl_double_matrix", "pxsl_lines_op",
+    "pxsl_resol_system", "pxs_steps_invert_matrix", "pxs_compute_ech",
+    "pxs_compute_ech_reduite", "pxs_system_simpl", "pxs_commute_matrix",
+    "pxsl_pow_matrix", "pxs_invertible_matrix", "pxs_diag_matrix",
+    "randmatrixrect", "pxs_finiterv", "pxsl_law", "pxsl_moment",
+    "pxsl_scalar_product", "pxs_simul_law", "pxs_fct_finiterv",
+    "pxsl_res_num", "pxsl_sum_vector", "pxs_nvirgzero", "pxsl_num",
+    "pxs_gauss_jordan", "pxs_construct_RREF",
+    "pxs_repeat_generate_sys", "pxs_break_all_colinear_rows",
+    "pxsl_mult", "pxsl_choose_udv", "pxs_lang", "myst",
+    "pxs_variation_number",
+    "pxs_Interval", "pxs_Plotable",
+]
+_STUB_CLASS_NAMES = ("pxs_Interval", "pxs_Plotable")
+
+
+def _make_stub_module(name: str) -> types.ModuleType:
+    """Module stub PEP 562 : tout attribut inconnu est fourni (passthrough /
+    classe universelle), et `__all__` couvre les helpers connus pour que
+    `from X import *` fonctionne."""
+    import re as _re
+    mod = types.ModuleType(name)
+
+    def __getattr__(attr):
+        if attr == "pxs_config":
+            return _config_stub
+        if attr == "pxs_variation_number":
+            return 1                          # règle 13.2 : vaut toujours 1
+        if attr and (attr[0].isupper() or _re.match(r"pxs_[A-Z]", attr)):
+            return _StubObject                # ressemble à une classe
+        return _passthrough
+
+    mod.__getattr__ = __getattr__
+    mod.__all__ = list(KNOWN_PXS_HELPERS)
+    return mod
+
+
 def install_pyxiscience_stubs() -> None:
     """
     Register stub modules for `pyxiscience.*` in sys.modules so that generated
     Python blocks can `import` PyxiScience helpers without crashing. Idempotent.
+    UNIFIÉ avec validation/harness.py (même factory PEP 562 + __all__) : les
+    deux systèmes partagent sys.modules, le premier installé sert aux deux.
     """
     global _STUBS_INSTALLED
     if _STUBS_INSTALLED:
@@ -91,7 +143,7 @@ def install_pyxiscience_stubs() -> None:
         _STUBS_INSTALLED = True
         return
 
-    pyxiscience = types.ModuleType("pyxiscience")
+    pyxiscience = _make_stub_module("pyxiscience")
     sys.modules["pyxiscience"] = pyxiscience
 
     submodules = [
@@ -101,25 +153,12 @@ def install_pyxiscience_stubs() -> None:
         "Mes_fctions_d_analyse",       # alias without _bis (cf. Exo 2 Am. Sud)
         "Mes_fctions_d_alg_lineaire_bis",
         "Mes_fctions_probabilistes_bis",
+        "Mes_fctions_generalistes",    # alias historiques
+        "Mes_fctions_probabilistes",
+        "Mes_fctions_d_alg_lineaire",
     ]
-    helper_names = [
-        "pxs_config", "pxsl_latex_coefficient", "pxsl_format_number",
-        "pxsl_res_num", "pxsl_matrix", "pxsl_pow", "pxsl_par", "pxsl_mult",
-        "pxs_explain_IBP", "pxs_nvirgzero", "_pxsl_choose_udv",
-        "pxs_variation_number", "myst",
-        "pxsl_latex_avec_formatage",  # cf. Exo 2 Am Sud
-        "pxsl_choose_udv",
-    ]
-    class_names = ["pxs_Interval", "pxs_Plotable"]
-
     for sub in submodules:
-        m = types.ModuleType(f"pyxiscience.{sub}")
-        for name in helper_names:
-            setattr(m, name, _passthrough)
-        # Special-case: pxs_config must return a dict (used as **kwargs).
-        setattr(m, "pxs_config", _config_stub)
-        for name in class_names:
-            setattr(m, name, _StubObject)
+        m = _make_stub_module(f"pyxiscience.{sub}")
         sys.modules[f"pyxiscience.{sub}"] = m
         setattr(pyxiscience, sub, m)
 
