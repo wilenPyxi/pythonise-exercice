@@ -1,0 +1,17 @@
+# Blueprint Render — « New + → Blueprint » pointé sur ce dépôt déploie tout.
+# (Alternative : créer le Web Service à la main, cf. DEPLOIEMENT_RENDER.md.)
+services:
+  - type: web
+    name: pythonise-exercice
+    runtime: docker
+    plan: free                # « starter » (7 $/mois) = pas de mise en veille
+    healthCheckPath: /health
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false           # à saisir dans le dashboard (jamais dans le repo)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: APP_USER
+        value: pyxi

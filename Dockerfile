@@ -30,5 +30,6 @@ EXPOSE 7860
 
 # UN SEUL worker (job store en mémoire + threads d'arrière-plan partagés),
 # plusieurs threads pour que le polling et un job tournent en parallèle.
-CMD ["gunicorn", "-w", "1", "--threads", "8", "--timeout", "120", \
-     "-b", "0.0.0.0:7860", "run:app"]
+# Port : ${PORT} si l'hébergeur l'impose (Render → 10000), sinon 7860 (HF,
+# posé par le ENV ci-dessus). Forme shell pour l'expansion de variable.
+CMD gunicorn -w 1 --threads 8 --timeout 120 -b 0.0.0.0:${PORT:-7860} run:app
