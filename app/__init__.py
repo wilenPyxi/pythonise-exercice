@@ -35,6 +35,12 @@ def create_app():
     _setup_logging()
     _load_env()
 
+    # Serveur mono-process : le job (thread CPU-bound — harnais sympy) et les
+    # requêtes de suivi partagent le GIL. Commutation à 1 ms (défaut 5 ms) pour
+    # que /api/jobs/<id> réponde pendant les phases de calcul (coût ~négligeable).
+    import sys
+    sys.setswitchinterval(0.001)
+
     from flask import Flask
     from app.config import TEMPLATES_DIR
     from app.server import register_routes

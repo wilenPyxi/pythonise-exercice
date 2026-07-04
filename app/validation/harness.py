@@ -23,6 +23,7 @@ import logging
 import random
 import re
 import sys
+import time as _time
 import traceback
 import types
 import warnings as _warnings
@@ -384,6 +385,10 @@ def validate_text(text: str, seeds: int = 100) -> dict:
 
     for s in range(seeds):
         random.seed(s)
+        # Céder la main entre les graines : en contexte serveur (mono-process),
+        # 100 graines de sympy monopolisent le GIL et rendent le suivi de job
+        # injoignable (proxy HF → 502) — 1 ms/graine rétablit la réactivité.
+        _time.sleep(0.001)
         env: dict = {"rd": random, "random": random}
         out: dict = {}
 
