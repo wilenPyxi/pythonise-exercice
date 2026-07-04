@@ -184,10 +184,11 @@ def build_exercise_metadata(
     lines = [f"{fence}{{exercise}}"]
     for k in _HEADER_FIELDS:
         lines.append(f":{k}: {values[k]}".rstrip())
-        # Déclinaison d'un exercice existant : tracer l'id source juste après :id:
-        # (convention des exemples validés : :originalExerciseId:).
-        if k == "id" and decl_type and src.get("id"):
-            lines.append(f":originalExerciseId: {src['id']}")
+        # Déclinaison : tracer l'id de l'exercice SOURCE juste après :id:
+        # (convention des 33 exemples validés : :originalExerciseId: TOUJOURS
+        # présent — vide si la source n'a pas d'id, à compléter côté plateforme).
+        if k == "id" and decl_type:
+            lines.append(f":originalExerciseId: {src.get('id', '')}".rstrip())
     return "\n".join(lines)
 
 

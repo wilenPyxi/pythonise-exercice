@@ -783,3 +783,27 @@ def check_decimals_for_lang(exercise: str, lang: str) -> list[dict]:
     else:
         _scan(body, lang, "corps")
     return warnings
+
+
+# ── Aération (lisibilité — mise en page des exemples validés) ────────────────
+
+_BLOCK_OPENER_RE = re.compile(r"^:{4,5}\{\w")
+
+
+def aerate_blocks(exercise: str) -> tuple[str, int]:
+    """Garantit une ligne vide avant chaque ouverture de bloc
+    `:::::{question}` / `::::{sous-bloc}` — la mise en page des 33 exemples
+    validés (déclinaisons) et du corpus 222. Idempotent. Pas de suivi de
+    fences : `::::{` n'existe qu'en structure MyST, et une ligne vide serait
+    de toute façon inoffensive dans un bloc Python."""
+    out: list[str] = []
+    added = 0
+    for line in exercise.splitlines():
+        if _BLOCK_OPENER_RE.match(line) and out and out[-1].strip():
+            out.append("")
+            added += 1
+        out.append(line)
+    text = "\n".join(out)
+    if exercise.endswith("\n"):
+        text += "\n"
+    return text, added

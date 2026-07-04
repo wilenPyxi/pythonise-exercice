@@ -530,6 +530,8 @@ TRANSLATE_FORMAT_BOTH = (
 # Divergences wx ↔ conventions strictes (corpus 222) tranchées : format
 # plateforme des wx (mcqAnswer/:solution:/{input}) + conventions strictes de
 # l'app (fences 4, globals(), injections nues camelCase Aff, IDs contigus).
+# v1 → v2 (2026-07-02) : MCQ_SPEC + section « DISTRACTEURS EN MIROIR » (règle
+# enseignante : grille symétrique, bonne réponse jamais devinable par la forme).
 # ─────────────────────────────────────────────────────────────────────────────
 
 MCQ_SPEC = """\
@@ -606,6 +608,27 @@ DISTRACTEURS — ERREURS TYPES UNIQUEMENT (aucune valeur au hasard) :
     matrice opposée ; oubli du terme +b.
   • Compositions affines : oubli de b_f ; ordre inversé (g∘f vs f∘g) ; signe opposé.
   • Limites : mauvaise forme indéterminée ; mauvais signe d'infini.
+
+DISTRACTEURS EN MIROIR — INDEVINABILITÉ (règle enseignante, 2026-07-02) :
+  • Les options forment une GRILLE SYMÉTRIQUE dont la bonne réponse est un
+    élément comme les autres — JAMAIS des variations « une seule chose à la
+    fois » autour de la bonne réponse.
+      ✗ MAUVAIS : 2x+3 (vraie) ; 2x−3 ; 2x−4 ; −2x+3
+        → le motif commun « 2x+3 » se devine (chaque distracteur n'en dévie
+          que d'un seul trait).
+      ✓ BON : 2x+3 ; 2x−3 ; −2x+3 ; −2x−3
+        → grille complète des combinaisons de signes : l'intuition ne peut
+          plus trier, il faut CALCULER.
+  • La bonne réponse ne doit JAMAIS être structurellement unique parmi les
+    options : ni la seule avec un radical/une fraction/un facteur, ni la plus
+    longue ou la plus courte, ni la seule sous forme simplifiée — TOUTES les
+    options au même niveau de simplification (jamais de fraction réductible).
+  • Concilier avec les erreurs types : choisir les erreurs types qui FERMENT
+    la grille (signe × signe, ordre × signe…) plutôt que d'empiler des erreurs
+    indépendantes autour du même gabarit.
+  • Test avant de rendre : masque mentalement la bonne réponse — si sa place
+    se retrouve par simple examen des FORMES (motif majoritaire, symétrie
+    incomplète, singularité), reconstruis la grille.
 
 ANTI-COLLISION (le piège n°1 des QCM randomisés — un distracteur peut devenir
 ÉGAL à la bonne réponse sur certaines graines) — dans CET ordre :

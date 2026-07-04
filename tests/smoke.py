@@ -406,6 +406,68 @@ check("API : manual modèle hors rôle → 400",
 check("/api/models expose catalogue par rôle sans Fable",
       "fable" not in json.dumps(client.get("/api/models").get_json()).lower())
 
+# ── 3quater. Aération, originalExerciseId, annulation (bouton Stop) ─────────
+from app.pipeline.postprocess import aerate_blocks  # noqa: E402
+
+_compact = (":::::{question}\n:questionType: MCQ\n::::{questionStatement}\n"
+            "texte\n::::\n::::{mcqAnswer}\n:isRightAnswer: true\nx\n::::")
+_aered, _n_aer = aerate_blocks(_compact)
+check("aération : lignes vides avant chaque bloc",
+      _n_aer == 2 and "\n\n::::{questionStatement}" in _aered
+      and "\n\n::::{mcqAnswer}" in _aered)
+check("aération : idempotente", aerate_blocks(_aered)[1] == 0)
+
+from app.pipeline.generate import build_exercise_metadata  # noqa: E402
+
+check("déclinaison : originalExerciseId = id du QST source",
+      ":originalExerciseId: abc-123" in build_exercise_metadata(
+          ":id: abc-123\n:title: T", "", {}, "", decl_type="qcm"))
+check("déclinaison : originalExerciseId présent même sans id source",
+      "\n:originalExerciseId:" in build_exercise_metadata(
+          ":title: T", "", {}, "", decl_type="qcm"))
+check("pythonise : pas d'originalExerciseId",
+      "originalExerciseId" not in build_exercise_metadata(
+          ":title: T", "", {}, "", decl_type=None))
+
+# Annulation : job 3 fichiers avec mock LENT, cancel immédiat → cancelled.
+check("annulation : job inconnu → 404",
+      client.post("/api/jobs/zzz/cancel").status_code == 404)
+
+import time as _time  # noqa: E402
+
+
+def mock_llm_slow(*a, **k):
+    _time.sleep(0.15)
+    return mock_llm(*a, **k)
+
+
+for _m in (analyze, audit, generate, orchestrator):
+    _m.process_with_openrouter = mock_llm_slow
+_sols.process_with_openrouter = mock_llm_slow
+_tr.process_with_openrouter = mock_llm_slow
+
+_rc_start = client.post("/api/jobs", json={
+    "files": [{"filename": f"c{i}.md", "content": SMOKE_SOURCE} for i in range(3)]})
+_jid_c = _rc_start.get_json()["job_id"]
+check("annulation : cancel accepté (202)",
+      client.post(f"/api/jobs/{_jid_c}/cancel").status_code == 202)
+_st_c = None
+for _ in range(400):
+    _st_c = client.get(f"/api/jobs/{_jid_c}").get_json()
+    if _st_c["status"] != "running":
+        break
+    _time.sleep(0.05)
+check("annulation : statut final cancelled", _st_c["status"] == "cancelled")
+check("annulation : arrêt anticipé (résultats partiels conservés)",
+      _st_c["files_done"] < 3 and isinstance(_st_c["results"], list))
+check("annulation : re-cancel d'un job terminé → 409",
+      client.post(f"/api/jobs/{_jid_c}/cancel").status_code == 409)
+
+for _m in (analyze, audit, generate, orchestrator):
+    _m.process_with_openrouter = mock_llm
+_sols.process_with_openrouter = mock_llm
+_tr.process_with_openrouter = mock_llm
+
 # Banc : --dry-run (plomberie complète hors ligne).
 import subprocess  # noqa: E402
 

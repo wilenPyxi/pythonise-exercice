@@ -47,6 +47,12 @@ VALID_LEVELS = ("", "Elementary", "Intermediate", "Advanced")
 VALID_MODES = ("pythonise", "declinaisons")
 
 
+class JobCancelled(Exception):
+    """Arrêt demandé par l'utilisateur (bouton Stop). L'annulation est
+    COOPÉRATIVE : elle prend effet au prochain point d'étape du pipeline
+    (un appel LLM en vol n'est pas interrompu, mais rien ne s'enchaîne)."""
+
+
 def _set_job(job_id: str, **kwargs):
     with _JOBS_LOCK:
         if job_id in _JOBS:
@@ -79,8 +85,27 @@ def _purge_old_jobs():
     cutoff = time.time() - JOB_TTL
     with _JOBS_LOCK:
         for jid in [jid for jid, j in _JOBS.items()
-                    if j.get("status") in ("done", "error") and (j.get("finished_at") or 0) < cutoff]:
+                    if j.get("status") in ("done", "error", "cancelled")
+                    and (j.get("finished_at") or 0) < cutoff]:
             del _JOBS[jid]
+
+
+def _cancel_requested(job_id: str) -> bool:
+    with _JOBS_LOCK:
+        j = _JOBS.get(job_id)
+        return bool(j and j.get("cancel_requested"))
+
+
+def _summarize(results: list[dict], total: int) -> dict:
+    ok = sum(1 for r in results
+             if r["status"] == "done" and r["result"]["harness"]["ok"])
+    warn = sum(1 for r in results
+               if r["status"] == "done" and not r["result"]["harness"]["ok"])
+    err = sum(1 for r in results if r["status"] == "error")
+    cost = round(sum(r["result"]["cost"]["usd"] for r in results
+                     if r["status"] == "done"), 4)
+    return {"total": total, "verts": ok, "rouges": warn,
+            "erreurs": err, "cost_usd": cost}
 
 
 def _decl_output_name(source_name: str, decl_type: str) -> str:
@@ -96,12 +121,47 @@ def _run_job(job_id: str, files: list[dict], level: str, model_idx: int,
     En mode `declinaisons`, chaque source produit 1 résultat PAR type coché
     (analyse partagée entre types et échelons — aucun appel LLM redondant)."""
     results: list[dict] = []
+    try:
+        _run_job_files(job_id, files, level, model_idx, lang, mode,
+                       decl_types, policy, manual_models, results)
+    except JobCancelled:
+        _set_job(
+            job_id,
+            status="cancelled",
+            step_label="Arrêté par l'utilisateur",
+            finished_at=time.time(),
+            results=list(results),
+            summary=_summarize(results, len(files)),
+        )
+        logger.info("Job %s annulé par l'utilisateur (%d/%d fichiers traités).",
+                    job_id, len(results), len(files))
+        _purge_old_jobs()
+        return
+
+    _set_job(
+        job_id,
+        status="done",
+        step_label="Terminé",
+        finished_at=time.time(),
+        summary=_summarize(results, len(files)),
+    )
+    _purge_old_jobs()
+
+
+def _run_job_files(job_id, files, level, model_idx, lang, mode, decl_types,
+                   policy, manual_models, results):
     for i, f in enumerate(files):
+        if _cancel_requested(job_id):
+            raise JobCancelled()
         name = f.get("filename") or f"fichier_{i + 1}.md"
         _set_job(job_id, current_file=name, files_done=i,
                  step_label=f"[{i + 1}/{len(files)}] {name} — démarrage…")
 
         def set_step(label: str, _i=i, _name=name):
+            # Point de contrôle d'annulation : chaque étape du pipeline passe
+            # ici (analyse, génération, audit, harnais, réparation, échelon).
+            if _cancel_requested(job_id):
+                raise JobCancelled()
             _set_job(job_id, step_label=f"[{_i + 1}/{len(files)}] {_name} — {label}")
 
         try:
@@ -140,27 +200,12 @@ def _run_job(job_id: str, files: list[dict], level: str, model_idx: int,
                             result.get("model_used"),
                             len(result["warnings"]), result["duration_s"],
                             result["cost"]["usd"])
+        except JobCancelled:
+            raise                     # remonte au gestionnaire de _run_job
         except Exception as exc:
             logger.exception("Échec du pipeline sur %s", name)
             results.append({"filename": name, "status": "error", "error": str(exc)})
         _set_job(job_id, results=list(results), files_done=i + 1)
-
-    ok = sum(1 for r in results
-             if r["status"] == "done" and r["result"]["harness"]["ok"])
-    warn = sum(1 for r in results
-               if r["status"] == "done" and not r["result"]["harness"]["ok"])
-    err = sum(1 for r in results if r["status"] == "error")
-    total_cost = round(sum(r["result"]["cost"]["usd"] for r in results
-                           if r["status"] == "done"), 4)
-    _set_job(
-        job_id,
-        status="done",
-        step_label="Terminé",
-        finished_at=time.time(),
-        summary={"total": len(files), "verts": ok, "rouges": warn,
-                 "erreurs": err, "cost_usd": total_cost},
-    )
-    _purge_old_jobs()
 
 
 def _auth_ok() -> bool:
@@ -325,6 +370,20 @@ def register_routes(app):
             "summary": job.get("summary"),
             "error": job.get("error"),
         })
+
+    @app.route("/api/jobs/<job_id>/cancel", methods=["POST"])
+    def job_cancel(job_id: str):
+        """Arrêt coopératif : prend effet au prochain point d'étape (un appel
+        LLM en vol se termine, rien ne s'enchaîne). Résultats partiels gardés."""
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            if not job:
+                return jsonify({"error": "Job inconnu."}), 404
+            if job["status"] != "running":
+                return jsonify({"status": job["status"],
+                                "error": "Job déjà terminé."}), 409
+            job["cancel_requested"] = True
+        return jsonify({"status": "cancelling"}), 202
 
     @app.route("/api/jobs/<job_id>/download", methods=["GET"])
     def job_download_zip(job_id: str):

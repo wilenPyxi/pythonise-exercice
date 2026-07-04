@@ -406,6 +406,8 @@
 
       <div class="actions">
         <button class="btn btn--primary" id="run-btn" type="button" onclick="run()">Lancer la pythonisation</button>
+        <button class="btn" id="stop-btn" type="button" onclick="stopJob()" hidden
+                style="border-color:#c0392b;color:#c0392b;">⏹ Arrêter</button>
         <button class="btn" type="button" onclick="document.getElementById('file-input').click()">Charger des fichiers .md</button>
         <input type="file" id="file-input" accept=".md,.txt,text/markdown,text/plain" multiple hidden onchange="loadFiles(event)">
         <button class="btn btn--ghost" type="button" onclick="clearAll()">Effacer</button>
@@ -839,6 +841,9 @@ async function run() {
   pollFailures = 0;
   jobResults = []; activeResultIdx = 0;
   document.getElementById("run-btn").disabled = true;
+  const stopBtn = document.getElementById("stop-btn");
+  stopBtn.hidden = false; stopBtn.disabled = false;
+  stopBtn.textContent = "⏹ Arrêter";
   hideStatus();
   setExerciseOutput(""); setAnalysisOutput(null); setNotionsOutput(""); setAuditOutput({});
   setMetaResult(null);
@@ -862,7 +867,35 @@ async function run() {
   } catch (e) {
     setProgress("error", "Échec", "—");
     setStatus("error", "Erreur : " + e.message);
-    document.getElementById("run-btn").disabled = false;
+    jobFinished();
+  }
+}
+
+/* Fin de job (quel que soit l'état terminal) : run réactivé, stop masqué. */
+function jobFinished() {
+  document.getElementById("run-btn").disabled = false;
+  document.getElementById("stop-btn").hidden = true;
+}
+
+/* Arrêt coopératif : le serveur stoppe au prochain point d'étape (l'appel
+   LLM en cours se termine, rien ne s'enchaîne) ; résultats partiels gardés. */
+async function stopJob() {
+  if (!currentJobId) return;
+  const stopBtn = document.getElementById("stop-btn");
+  stopBtn.disabled = true;
+  stopBtn.textContent = "Arrêt en cours…";
+  try {
+    const res = await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
+    if (res.status === 404 || res.status === 409) {
+      // Job déjà terminé/perdu : le prochain poll affichera l'état final.
+      stopBtn.hidden = true;
+      return;
+    }
+    setStatus("warn", "Arrêt demandé — fin de l'étape en cours…");
+  } catch (e) {
+    stopBtn.disabled = false;
+    stopBtn.textContent = "⏹ Arrêter";
+    setStatus("error", "Impossible de demander l'arrêt : " + e.message);
   }
 }
 
@@ -882,7 +915,7 @@ async function poll() {
       // Job inconnu : le serveur a probablement redémarré (perte du suivi en mémoire).
       setProgress("error", "Suivi perdu", "—");
       setStatus("error", "Le serveur a perdu ce job (redémarrage). Le traitement est interrompu — relance.");
-      document.getElementById("run-btn").disabled = false;
+      jobFinished();
       return;
     }
 
@@ -902,11 +935,19 @@ async function poll() {
       activeResultIdx = 0;
       renderResultFiles();
       showResult(0);
-      document.getElementById("run-btn").disabled = false;
+      jobFinished();
+    } else if (data.status === "cancelled") {
+      const s = data.summary || {};
+      setProgress("error", "Arrêté", `${data.files_done}/${data.files_total}`);
+      setStatus("warn",
+        `Génération arrêtée. Résultats partiels conservés : ${s.verts ?? 0} VERT(S), `
+        + `${s.rouges ?? 0} ROUGE(S), ${s.erreurs ?? 0} erreur(s) · ${s.cost_usd ?? 0} $`);
+      if (jobResults.length) { activeResultIdx = 0; renderResultFiles(); showResult(0); }
+      jobFinished();
     } else if (data.status === "error") {
       setProgress("error", "Erreur", "—");
       setStatus("error", "Erreur : " + (data.error || "inconnue"));
-      document.getElementById("run-btn").disabled = false;
+      jobFinished();
     }
   } catch (e) {
     // Erreur TRANSITOIRE (proxy HF, worker occupé en calcul, réseau) : on
@@ -918,7 +959,7 @@ async function poll() {
         "Suivi interrompu après plusieurs tentatives (" + e.message + "). "
         + "Le traitement continue peut-être côté serveur : recharge la page dans ~1 min "
         + "pour le retrouver, ou relance avec moins de fichiers à la fois.");
-      document.getElementById("run-btn").disabled = false;
+      jobFinished();
       return;
     }
     setStatus("warn", `Reconnexion au suivi… (${pollFailures}/${POLL_MAX_FAILURES})`);
@@ -929,6 +970,8 @@ async function poll() {
 function clearAll() {
   if (pollTimer) clearTimeout(pollTimer);
   currentJobId = null;
+  document.getElementById("stop-btn").hidden = true;
+  document.getElementById("run-btn").disabled = false;
   loadedFiles = []; jobResults = []; activeResultIdx = 0;
   renderFileList();
   document.getElementById("input").value = "";

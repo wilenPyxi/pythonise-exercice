@@ -380,6 +380,7 @@ def run_exercise(
     audit_warnings.extend(pp.check_decimals_for_lang(myst_exercise, effective_lang))
 
     # ── 8. Porte harnais + réparation ────────────────────────────────────────
+    myst_exercise, _aer = pp.aerate_blocks(myst_exercise)   # lisibilité (exemples)
     myst_exercise, renum = pp.renumber_question_ids(myst_exercise)
     if renum:
         audit_patches.append({
@@ -427,6 +428,7 @@ def run_exercise(
             candidate, _ = pp.merge_decl_python_blocks(candidate)
         if decl_type == "qcm":
             candidate, _ = pp.fix_none_option_last(candidate)
+        candidate, _ = pp.aerate_blocks(candidate)
         candidate, _ = pp.renumber_question_ids(candidate)
         candidate_report = harness.validate_text(candidate, seeds=HARNESS_GATE_SEEDS)
 

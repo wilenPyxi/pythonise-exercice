@@ -4,6 +4,13 @@ App Flask à deux modes :
 - **Pythonisation** d'exercices PyxiScience MyST (valeurs fixes → randomisées) ;
 - **Déclinaisons** (2026-07) : génération de versions **QCM** (MCQ) et/ou
   **QAT** (FGQ, champs libres ordonnés) d'un exercice, randomisées elles aussi.
+  `:originalExerciseId:` systématique (= `:id:` du QST source, vide sinon) ;
+  distracteurs MCQ en **grille miroir** (variations symétriques — la bonne
+  réponse ne se devine jamais par la forme ; règle enseignante 2026-07-02).
+
+Un bouton **⏹ Arrêter** (tous modes) annule le job en cours : arrêt coopératif
+au prochain point d'étape (`POST /api/jobs/<id>/cancel`), résultats partiels
+conservés et téléchargeables.
 
 Pipeline async : analyse LLM + notions + RAG (parallèles, **partagés entre QCM
 et QAT**) → génération par paires → audit LLM → filets déterministes → **porte
