@@ -532,6 +532,12 @@ TRANSLATE_FORMAT_BOTH = (
 # l'app (fences 4, globals(), injections nues camelCase Aff, IDs contigus).
 # v1 → v2 (2026-07-02) : MCQ_SPEC + section « DISTRACTEURS EN MIROIR » (règle
 # enseignante : grille symétrique, bonne réponse jamais devinable par la forme).
+# v2 → v3 (2026-07-06) : intégration du prompt système QCM affiné —
+# distracteurs cohérents (erreur réelle, near-miss même famille, flip jamais sur
+# entrée nulle, swap sûr en symbolique), formulation directe, matrices d'option
+# en \small (anti-scrollbar), éclatement avec solution partitionnée. Écart
+# assumé vs le prompt fourni : questionHint reste REMPLI (35/35 dans les 33
+# exemples validés qui font foi), pas vide.
 # ─────────────────────────────────────────────────────────────────────────────
 
 MCQ_SPEC = """\
@@ -547,7 +553,7 @@ FORMAT QCM (questionType MCQ) — NORMATIF :
 ::::
 
 ::::{questionHint}
-<indice — peut rester vide ; VERBATIM si repris de la source>
+<indice de DÉMARRAGE qui ne révèle pas la réponse ; VERBATIM si repris de la source>
 ::::
 
 ::::{mcqAnswer}
@@ -644,10 +650,16 @@ variante trivialement éliminable :
     singularité, bloc figé), reconstruis les distracteurs.
 
   DISTINCTION GARANTIE SUR TOUTES LES DÉCLINAISONS :
-  • Construis chaque distracteur par une modification à DELTA NON NUL GARANTI
-    (retournement de signe d'une entrée NON nulle ; transposée quand une entrée
-    est fractionnaire et l'autre entière ; décalage ±1…) → jamais de doublon
-    quel que soit le tirage.
+  • Construis chaque distracteur par une modification à DELTA NON NUL GARANTI,
+    chacun sur une ENTRÉE/POSITION DIFFÉRENTE. Techniques sûres :
+      – Flip de signe d'une entrée : SEULEMENT sur une entrée GARANTIE ≠ 0
+        (flipper un 0 redonne l'original → collision). Tire ces entrées dans un
+        domaine excluant 0, ou choisis une position structurellement non nulle.
+      – Interversion de colonnes/variables (∂x↔∂y) : SÛRE sur entrées
+        SYMBOLIQUES (une colonne dépend de x, l'autre de y → jamais égales) ;
+        DANGEREUSE sur entrées entières (deux colonnes peuvent coïncider) → dans
+        ce cas, préférer 3 flips de signe sur des entrées distinctes non nulles.
+      – Décalage ±1 (bornes entières) ; multiple/omission (b oublié, −b, 2b).
   • Vérifie en Python : sur ≥300 tirages, `assert` que les options sont deux à
     deux distinctes (chaînes rendues). Aucune collision tolérée.
 
@@ -671,7 +683,34 @@ questions. Les variables des paires suivantes s'ajoutent SANS aléa nouveau.
 
 FORMATAGE : STRICTEMENT IDENTIQUE entre bonne réponse et distracteurs (même
 style LaTeX, mêmes helpers, même nombre de décimales, même notation
-matricielle) — sinon la bonne réponse se devine.
+matricielle, MÊME LONGUEUR) — sinon la bonne réponse se devine.
+  • JAMAIS d'exemple/parenthèse explicative sur la SEULE bonne réponse
+    (« … (e.g. A<B donne x) ») : soit tout le monde a l'ajout, soit personne.
+  • JAMAIS d'annotation d'erreur visible dans une option (« (signe oublié) »,
+    « (forgot +b) ») — ça vit UNIQUEMENT dans la solution détaillée.
+
+FORMULATION DIRECTE (QCM) : on demande le RÉSULTAT à cocher. Retire les consignes
+de méthode/rédaction qui n'ont de sens qu'en réponse libre — « calcule de deux
+façons », « vos deux réponses doivent coïncider », « montre que… », « trace /
+esquisse… », « justifie… ». Ex. : « Compute (f∘g)(x) in two ways… should
+agree! » → « Compute (f∘g)(x). »
+
+RENDU DES MATRICES DANS LES OPTIONS (anti-scrollbar) : une `bmatrix` pleine dans
+une case d'option fait apparaître un ascenseur. Si une OPTION contient une
+matrice, réduis-la : `{\\small \\begin{bmatrix}…\\end{bmatrix}}` (échelle si
+besoin : smallmatrix < \\scriptsize < \\footnotesize < \\small ; défaut \\small).
+Garde les `bmatrix` PLEINES dans la detailedSolution (fidélité + place).
+
+ÉCLATEMENT (autorisé) : si UNE question porte sur N cas indépendants (par
+ellipse, par sous-fonction…), tu peux l'éclater en N questions — le contexte
+commun monte dans l'énoncé global, et la detailedSolution source est PARTITIONNÉE
+par cas (**(i)**, **(ii)**…) puis rattachée à chaque question. Contrainte dure :
+la CONCATÉNATION des morceaux doit être IDENTIQUE à la solution source. Par
+défaut (pas de cas multiples), garde le MÊME nombre de questions que la source.
+
+questionHint : indice de DÉMARRAGE qui ne révèle jamais la réponse (cf. exemples
+validés — tous en fournissent un) ; VERBATIM si la source en a un ; vide
+seulement si aucun indice pertinent.
 
 L'ÉNONCÉ NE DONNE JAMAIS LA RÉPONSE (l'énoncé définit, la question interroge).
 """  # noqa: E501 — texte normatif verbatim (valeur injectée telle quelle, accolades SIMPLES)
