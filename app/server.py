@@ -242,8 +242,10 @@ def register_routes(app):
 
     @app.route("/health")
     def health():
+        from app.config import APP_VERSION
         return jsonify({
             "status": "ok",
+            "version": APP_VERSION,
             "openrouter_api_key": bool(os.getenv("OPENROUTER_API_KEY")),
             "openai_api_key": bool(os.getenv("OPENAI_API_KEY")),
         })

@@ -20,6 +20,11 @@ RULES_MD      = KNOWLEDGE_DIR / "pythonisation_rules.md"
 FEWSHOTS_DIR  = KNOWLEDGE_DIR / "fewshots"
 TEMPLATES_DIR = PACKAGE_DIR / "web" / "templates"
 
+# ── Version applicative (exposée par /health pour vérifier un déploiement) ───
+# Bumper à chaque déploiement significatif : permet de répondre « à jour ? »
+# sans se connecter (curl /health → champ "version").
+APP_VERSION = "2026-07-06 — MCQ_SPEC v3 + bouton Stop + suivi robuste + Render"
+
 # ── Convention MyST (vérifiée empiriquement : 222/222 exemples plateforme) ───
 # Bloc {python} = 4 backticks ; enveloppe {exercise} = 5 backticks.
 PYTHON_FENCE_BACKTICKS = 4
