@@ -609,26 +609,47 @@ DISTRACTEURS — ERREURS TYPES UNIQUEMENT (aucune valeur au hasard) :
   • Compositions affines : oubli de b_f ; ordre inversé (g∘f vs f∘g) ; signe opposé.
   • Limites : mauvaise forme indéterminée ; mauvais signe d'infini.
 
-DISTRACTEURS EN MIROIR — INDEVINABILITÉ (règle enseignante, 2026-07-02) :
-  • Les options forment une GRILLE SYMÉTRIQUE dont la bonne réponse est un
-    élément comme les autres — JAMAIS des variations « une seule chose à la
-    fois » autour de la bonne réponse.
-      ✗ MAUVAIS : 2x+3 (vraie) ; 2x−3 ; 2x−4 ; −2x+3
-        → le motif commun « 2x+3 » se devine (chaque distracteur n'en dévie
-          que d'un seul trait).
-      ✓ BON : 2x+3 ; 2x−3 ; −2x+3 ; −2x−3
-        → grille complète des combinaisons de signes : l'intuition ne peut
-          plus trier, il faut CALCULER.
-  • La bonne réponse ne doit JAMAIS être structurellement unique parmi les
-    options : ni la seule avec un radical/une fraction/un facteur, ni la plus
-    longue ou la plus courte, ni la seule sous forme simplifiée — TOUTES les
-    options au même niveau de simplification (jamais de fraction réductible).
-  • Concilier avec les erreurs types : choisir les erreurs types qui FERMENT
-    la grille (signe × signe, ordre × signe…) plutôt que d'empiler des erreurs
-    indépendantes autour du même gabarit.
+DISTRACTEURS COHÉRENTS & INDEVINABLES (règle enseignante, 2026-07-02) —
+un distracteur = une ERREUR RÉELLE que l'élève peut commettre, jamais une
+variante trivialement éliminable :
+
+  INTERDITS (trop faciles à deviner) :
+  • Garder une partie IDENTIQUE dans toutes les options alors qu'un seul bloc
+    change (ex. matrice A identique partout, seul b varie) → l'élève ignore A
+    et devine sur b. Fais VARIER la partie qui teste vraiment (ici A).
+  • ÉTIQUETER la classification qui trahit la réponse (« f is linear, b=0 »
+    quand des constantes sont visibles → écarté sans réfléchir). Ne nomme PAS
+    linear/affine dans les options : demande directement « quels A et b ? » et
+    montre les paires.
+  • Distracteurs ARTIFICIELS (−A tout entier, 2b…) sans erreur pédagogique
+    derrière.
+  • Variations « une seule chose à la fois » autour de la bonne réponse
+    (2x+3 / 2x−3 / 2x−4 / −2x+3) → le motif commun « 2x+3 » se devine.
+
+  À PRIVILÉGIER (erreurs pédagogiques réelles, en grille refermée) :
+  • Signe mal lu sur UNE entrée précise de A ou de b (ex. −4x lu +4x).
+  • Transposée de A (colonnes ↔ lignes) — erreur de lecture classique.
+  • Constante oubliée (b = 0, NON étiquetée « linear »).
+  • Oubli/inversion d'un terme (+b oublié, b soustrait au lieu d'ajouté).
+  • Encadrement/bornes : décalage ±1 (off-by-one).
+  • Combinaisons SYMÉTRIQUES qui referment la grille (signe × signe,
+    ordre × signe) plutôt que des erreurs indépendantes autour d'un gabarit :
+      ✓ 2x+3 / 2x−3 / −2x+3 / −2x−3 (grille de signes : l'intuition ne trie
+        plus, il faut CALCULER).
+  • La bonne réponse n'est JAMAIS structurellement unique : ni la seule avec
+    radical/fraction/facteur, ni la plus longue/courte, ni la seule simplifiée
+    — TOUTES au même niveau de simplification (jamais de fraction réductible).
   • Test avant de rendre : masque mentalement la bonne réponse — si sa place
-    se retrouve par simple examen des FORMES (motif majoritaire, symétrie
-    incomplète, singularité), reconstruis la grille.
+    se retrouve par la seule FORME (motif majoritaire, symétrie incomplète,
+    singularité, bloc figé), reconstruis les distracteurs.
+
+  DISTINCTION GARANTIE SUR TOUTES LES DÉCLINAISONS :
+  • Construis chaque distracteur par une modification à DELTA NON NUL GARANTI
+    (retournement de signe d'une entrée NON nulle ; transposée quand une entrée
+    est fractionnaire et l'autre entière ; décalage ±1…) → jamais de doublon
+    quel que soit le tirage.
+  • Vérifie en Python : sur ≥300 tirages, `assert` que les options sont deux à
+    deux distinctes (chaînes rendues). Aucune collision tolérée.
 
 ANTI-COLLISION (le piège n°1 des QCM randomisés — un distracteur peut devenir
 ÉGAL à la bonne réponse sur certaines graines) — dans CET ordre :
