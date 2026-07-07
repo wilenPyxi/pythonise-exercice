@@ -23,7 +23,7 @@ TEMPLATES_DIR = PACKAGE_DIR / "web" / "templates"
 # ── Version applicative (exposée par /health pour vérifier un déploiement) ───
 # Bumper à chaque déploiement significatif : permet de répondre « à jour ? »
 # sans se connecter (curl /health → champ "version").
-APP_VERSION = "2026-07-06 — audit pédagogique + MCQ_SPEC v3 + Stop + Render"
+APP_VERSION = "2026-07-07 — lot pythonisation (lint rendu $/%/rôles + audit pédago)"
 
 # ── Convention MyST (vérifiée empiriquement : 222/222 exemples plateforme) ───
 # Bloc {python} = 4 backticks ; enveloppe {exercise} = 5 backticks.

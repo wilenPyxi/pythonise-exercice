@@ -196,6 +196,60 @@ def scan_forbidden(body: str) -> list[str]:
     return errs
 
 
+# ── Lint de RENDU (cause racine des faux VERT — lot 12) ──────────────────────
+# Le harnais n'exécutait que le Python : des bugs de RENDU passaient VERT.
+# Ces contrôles sont STATIQUES (propriétés du gabarit, pas des tirages) et
+# s'appliquent à TOUS les modes. Fondés sur le skill pyxiscience-pythonisation
+# §1 et §4/§11.
+
+_ROLE_SPAN_RE = re.compile(r"\{(?:fr|en)\}`([^`]*)`")
+
+
+def check_render_static(text: str) -> list[str]:
+    """Lint de rendu (tous modes). Exclut le bloc Python et les lignes
+    `:solution:` (motif de réponse FGQ, pas du texte affiché).
+
+    NB : le contrôle « `{{ }}` dans un rôle bilingue » est volontairement
+    SÉPARÉ (check_injection_in_roles) et NON activé par défaut — 3/33 exemples
+    validés le violent (décision en attente)."""
+    body = strip_python_blocks(text)
+    # Retire les lignes de directive/métadonnée (`:title:`, `:originalSource:`,
+    # `::::{…}`, `:solution:`, `:isRightAnswer:`…) : ce n'est PAS du LaTeX
+    # affiché, un `%`/`$` y est légitime (citation source, id…).
+    body = re.sub(r"(?m)^\s*:.*$", "", body)
+    errs: list[str] = []
+
+    # `$` inline déséquilibré (skill §1) : ni `{{ }}` ni `${}` ne contiennent de
+    # `$`, donc un nombre IMPAIR de `$` non échappés = span math ouvert non
+    # refermé (bug `${{ x }},` du lot 12).
+    dollars = len(re.findall(r"(?<!\\)\$", body))
+    if dollars % 2 == 1:
+        errs.append(f"`$` inline déséquilibré ({dollars} `$` non échappés — "
+                    "impair) : un span math est ouvert et jamais refermé (skill §1)")
+
+    # `%` nu (non `\\%`) dans le texte affiché → commentaire LaTeX (skill §1).
+    mp = re.search(r"(?<!\\)%", body)
+    if mp:
+        ctx = body[max(0, mp.start() - 25):mp.start() + 6].replace("\n", " ")
+        errs.append(f"`%` nu non échappé (utiliser `\\%` — jamais dans le "
+                    f"Python) : …{ctx}…")
+    return errs
+
+
+def check_injection_in_roles(text: str) -> list[str]:
+    """`{{ }}` DANS un rôle {fr}`…`/{en}`…` → ne s'évalue pas (skill §4/§11 +
+    bug n°1 du lot 12). SÉPARÉ car 3/33 exemples validés le violent : à activer
+    dans validate_text une fois la politique confirmée + le filet d'extraction
+    en place."""
+    body = re.sub(r"(?m)^:solution:.*$", "", strip_python_blocks(text))
+    errs: list[str] = []
+    for m in _ROLE_SPAN_RE.finditer(body):
+        if "{{" in m.group(1):
+            errs.append("injection `{{…}}` dans un rôle bilingue (ne s'évalue "
+                        f"pas — sortir l'injection du rôle) : …{m.group(0)[:70]}…")
+    return errs
+
+
 # ── Contrôles déclinaisons QCM/QAT (mode `declinaisons`) ─────────────────────
 
 _QUESTION_RE = re.compile(r":::::\{question\}.*?:::::", re.DOTALL)
@@ -228,11 +282,8 @@ def check_declinaison_static(text: str) -> list[str]:
     errs: list[str] = []
     body = strip_python_blocks(text)
 
-    # {{ }} dans un rôle bilingue → ne s'évalue pas.
-    for m in re.finditer(r"\{(?:fr|en)\}`([^`]*)`", body):
-        if "{{" in m.group(1):
-            errs.append(f"injection `{{{{…}}}}` dans un rôle bilingue : …{m.group(0)[:80]}…")
-            break
+    # (`{{ }}` dans un rôle bilingue est désormais contrôlé par
+    # check_render_static, pour TOUS les modes — pas seulement les déclinaisons.)
 
     # Résidus de l'ancienne syntaxe plateforme.
     errs += [msg for rx, msg in _LEGACY_PATTERNS if rx.search(body)]
@@ -355,7 +406,8 @@ def validate_text(text: str, seeds: int = 100) -> dict:
         "first_failures": [str],     # ≤ 8, lisibles
       }
     """
-    static_errors = check_injection_tokens(text) + check_question_ids(text)
+    static_errors = (check_injection_tokens(text) + check_question_ids(text)
+                     + check_render_static(text) + check_injection_in_roles(text))
     declinaison = has_declinaison_questions(text)
     if declinaison:
         static_errors += check_declinaison_static(text)

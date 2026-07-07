@@ -366,6 +366,109 @@ def fix_dollar_digit(exercise: str) -> tuple[str, list[dict]]:
     return unmask_python_blocks(masked, blocks), patches
 
 
+# Paire de rôles bilingues : fr puis en (ou l'inverse), tolérant un espacement
+# (les deux langues d'un même énoncé sont parfois sur des lignes séparées).
+_ROLE_PAIR_RE = re.compile(r"\{(fr|en)\}`([^`]*)`\s*\{(fr|en)\}`([^`]*)`")
+_DOLLAR_SPAN_RE = re.compile(r"\$[^$]*\$")
+_BARE_INJ_RE = re.compile(r"\{\{[^{}]*\}\}")
+
+
+def _neutral_units(text: str) -> list[tuple[int, int, str]]:
+    """Unités NEUTRES (langue-indépendantes) à extraire d'un texte de rôle :
+    un span `$…$` CONTENANT une injection, ou un `{{…}}` nu hors de tout `$…$`.
+    Le reste (prose, math statique) est spécifique à la langue et RESTE."""
+    units: list[list] = []
+    spans = [(m.start(), m.end()) for m in _DOLLAR_SPAN_RE.finditer(text)]
+    for s, e in spans:
+        if "{{" in text[s:e]:
+            units.append([s, e, text[s:e]])
+    for m in _BARE_INJ_RE.finditer(text):
+        if not any(s <= m.start() < e for s, e in spans):
+            units.append([m.start(), m.end(), m.group(0)])
+    units.sort()
+    return [tuple(u) for u in units]
+
+
+def _segments(text: str, units: list) -> list[str]:
+    """n unités → n+1 segments de texte entre elles."""
+    segs, last = [], 0
+    for s, e, _ in units:
+        segs.append(text[last:s]); last = e
+    segs.append(text[last:])
+    return segs
+
+
+def extract_injections_from_roles(exercise: str) -> tuple[str, list[dict]]:
+    """Sort les injections HORS des rôles bilingues `{fr}`…`{en}`…`` (bug n°1 du
+    lot : `{{ }}` dans un rôle ne s'évalue pas). Coupe la paire de rôles autour
+    de chaque unité neutre commune aux deux langues et place l'unité en zone
+    neutre. ABANDONNE (laisse la paire intacte → ROUGE dur + réparation LLM) si
+    les unités FR/EN ne s'alignent pas exactement, ou si un résidu `{{` subsiste.
+    Idempotent : les rôles produits sont sans injection."""
+    masked, blocks = mask_python_blocks(exercise)
+    patches: list[dict] = []
+
+    def _repl(m: re.Match) -> str:
+        l1, t1, l2, t2 = m.group(1), m.group(2), m.group(3), m.group(4)
+        if l1 == l2 or ("{{" not in t1 and "{{" not in t2):
+            return m.group(0)
+        u1, u2 = _neutral_units(t1), _neutral_units(t2)
+        us1, us2 = [u[2] for u in u1], [u[2] for u in u2]
+        if not us1 or us1 != us2:            # rien d'extractible OU non aligné
+            return m.group(0)                # → bail (lint + réparation gèrent)
+        s1, s2 = _segments(t1, u1), _segments(t2, u2)
+        out: list[str] = []
+        for i in range(len(us1) + 1):
+            f, e = s1[i], s2[i]
+            if f or e:
+                out.append(f"{{{l1}}}`{f}`{{{l2}}}`{e}`")
+            if i < len(us1):
+                out.append(us1[i])
+        res = "".join(out)
+        # Garde-fou dur : aucune injection ne doit rester DANS un rôle du résultat.
+        for rm in _ROLE_PAIR_RE.finditer(res):
+            if "{{" in rm.group(2) or "{{" in rm.group(4):
+                return m.group(0)            # transformation douteuse → bail
+        patches.append({
+            "rule": "injection-hors-rôle",
+            "location": (t1[:40] + "…"),
+            "fix": "rôle coupé, injection en zone neutre",
+            "message": "Auto-correctif : injection sortie du rôle bilingue "
+                       "(ne s'évalue pas dans un rôle).",
+            "iteration": 0,
+        })
+        return res
+
+    masked = _ROLE_PAIR_RE.sub(_repl, masked)
+    return unmask_python_blocks(masked, blocks), patches
+
+
+def escape_percent(exercise: str) -> tuple[str, list[dict]]:
+    """Échappe les `%` VISIBLES en `\\%` (skill §1 — sinon `%` = début de
+    commentaire LaTeX, le reste de la ligne disparaît au rendu). ÉPARGNE :
+       • le bloc {python} (modulo `%`, formats `"%.*f"`, commentaires) ;
+       • les lignes de directive/métadonnée `:clé: …` (`:originalSource:` peut
+         contenir un `%` de citation) ;
+       • les `%` déjà échappés (`\\%`).
+    Point 5 du lot pythonisation."""
+    masked, blocks = mask_python_blocks(exercise)
+    lines = masked.split("\n")
+    patches: list[dict] = []
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith(":"):
+            continue
+        new = re.sub(r"(?<!\\)%", r"\\%", line)
+        if new != line:
+            patches.append({
+                "rule": "%", "location": line.strip()[:60],
+                "fix": "\\%",
+                "message": "Auto-correctif : `%` visible échappé en `\\%` (anti-commentaire LaTeX).",
+                "iteration": 0,
+            })
+            lines[i] = new
+    return unmask_python_blocks("\n".join(lines), blocks), patches
+
+
 def fix_triple_braces(exercise: str) -> tuple[str, list[dict]]:
     """`x^{{{exp}}}` (triple accolade, motif interdit) → `x^{ {{exp}} }`.
     Sans cette normalisation, le découpage des injections est ambigu et

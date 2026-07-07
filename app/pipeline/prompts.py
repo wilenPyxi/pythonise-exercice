@@ -222,6 +222,38 @@ FIDÉLITÉ À LA SOURCE (directive Chabane — INTOUCHABLE) :
     `\\phantom{{-}}\\\\`. Pas de `$$…$$`, pas de `\\[…\\]`, pas de `\\begin{{align}}`.
   • Géométrie pure : ne pas pythoniser (valeurs statiques conservées).
 
+COHÉRENCE SÉMANTIQUE & ROBUSTESSE (bugs réels du lot — à éviter absolument) :
+  • PARAMÈTRE VERROUILLÉ PAR LE VOCABULAIRE : ne randomise QUE ce dont la
+    variation garde TOUTES les phrases vraies. « dé cubique / équilibré » ⇒ 6
+    faces (jamais {{4, 6, 8}}) ; « tétraédrique » ⇒ 4 faces ; « trimestre » ⇒ 3
+    mois. Un mot de l'énoncé qui nomme une valeur la FIGE.
+  • TOUTE la solution CALCULÉE depuis les paramètres — jamais un littéral
+    recopié du PDF source. Chaque énumération, triplet-exemple, liste de
+    permutations, nombre travaillé se déduit des mêmes variables tirées (bug :
+    coder « (+,+,-) » vrai seulement pour n=3, ou « 9 / 2,3,4 »). Si tu ne sais
+    pas calculer la solution pour des paramètres QUELCONQUES → FIGE l'exo
+    (valeurs statiques) plutôt que de livrer un texte incohérent.
+  • NON-NÉGATIVITÉ par construction : tout effectif / case de tableau de
+    contingence / pourcentage reste ≥ 0 (ou ≥ 1 si « au moins un » est
+    implicite). Construis les cases pour qu'aucune ne puisse devenir négative.
+  • TITRE ↔ PARAMÈTRE : un libellé qui nomme une valeur (titre « jeu de 32 »)
+    doit être PARAMÉTRÉ ou générique si cette valeur est tirée.
+  • questionStatement JAMAIS VIDE : même si du contexte monte dans le préambule,
+    chaque question garde son texte propre.
+  • DÉTERMINISTE À REBOURS (préféré aux boucles de rejet) : tire les valeurs
+    LIBRES puis DÉDUIS le reste par arithmétique (ex. n_total = 4*k). Si une
+    boucle de rejet est nécessaire, INITIALISE toutes les variables AVANT la
+    boucle et garantis qu'elle trouve toujours une solution — jamais de variable
+    potentiellement indéfinie (bug `non_malades not defined`).
+  • TEXTE SPÉCIFIQUE À UNE LANGUE (ex. « valet »/« jack ») → littéral par langue
+    dans chaque rôle, JAMAIS injecté via `{{{{ }}}}` (une injection = une seule
+    valeur, identique dans les deux langues).
+  • APPROXIMATIONS : fraction EXACTE en réponse + `pxsl_res_num(float(x))` pour
+    la décimale (choisit seul `=`/`\\approx`) — JAMAIS `str(float(x))` (17
+    chiffres). AUCUN rôle de langue à l'intérieur d'un `$…$` ni d'un `equation*`.
+  • IMPORTS : inclure les helpers réellement utilisés (`lc`, `pxsl_res_num`,
+    `pxsl_pow`…) et TERMINER le bloc par `globals()`.
+
 FIGURES matplotlib (si l'exo en a) : construites dans LE bloc Python unique,
 variables du tirage réellement utilisées dans le tracé, labels DANS la fenêtre,
 pas de mélange Rational+numpy (passer par float()), UN SEUL `plt.show()` final —
@@ -924,7 +956,13 @@ RÈGLES DE CORRECTION :
   • **FGQ — arité** : le nb de {{{{input}}}} doit égaler le nb de valeurs de
     `"ord"` et le nb de tolérances ("0") dans `:solution:`.
   • **`{{{{ }}}}` dans un rôle {{fr}}`…`/{{en}}`…`** : sortir l'injection du
-    rôle (elle ne s'évalue pas dedans) — découper le rôle autour.
+    rôle (elle ne s'évalue pas dedans) — COUPER le rôle autour et placer
+    l'injection (ou son span `$…$`) en zone NEUTRE, symétriquement FR/EN :
+    `{{fr}}`… `{{en}}`… `${{{{ var }}}}${{fr}}` …`{{en}}` …``.
+  • **`$` inline déséquilibré** : chaque `$` ouvrant doit se refermer dans le
+    MÊME span (bug `${{{{ x }}}},`) — jamais un `$` ouvert qui traverse une
+    frontière de rôle ou de ligne.
+  • **`%` visible** : échapper en `\\%` (jamais dans le bloc Python).
 
 Réponds UNIQUEMENT avec l'exercice complet corrigé (de `````{{exercise}} à `````),
 sans préambule ni wrapper markdown.

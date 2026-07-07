@@ -125,7 +125,9 @@ def _apply_deterministic_nets(candidate: str, decl_type: Optional[str]) -> str:
     candidate, _ = pp.unwrap_latex_injections(candidate)
     candidate, _ = pp.auto_lift_injections(candidate)
     candidate, _ = pp.rename_underscore_injections(candidate)
+    candidate, _ = pp.extract_injections_from_roles(candidate)   # AVANT $-digit
     candidate, _ = pp.fix_dollar_digit(candidate)
+    candidate, _ = pp.escape_percent(candidate)
     if decl_type:
         candidate, _ = pp.fix_mcq_answer_aliases(candidate)
         candidate, _ = pp.merge_decl_python_blocks(candidate)
@@ -304,8 +306,14 @@ def run_exercise(
     myst_exercise, rename_patches = pp.rename_underscore_injections(myst_exercise)
     audit_patches.extend(rename_patches)
 
+    myst_exercise, role_patches = pp.extract_injections_from_roles(myst_exercise)
+    audit_patches.extend(role_patches)
+
     myst_exercise, dollar_patches = pp.fix_dollar_digit(myst_exercise)
     audit_patches.extend(dollar_patches)
+
+    myst_exercise, pct_patches = pp.escape_percent(myst_exercise)
+    audit_patches.extend(pct_patches)
 
     if decl_type:
         # Filet : alias d'option MCQ mal nommés / :isRightAnswer: manquant

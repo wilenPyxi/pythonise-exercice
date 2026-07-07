@@ -59,7 +59,7 @@ globals()
 :questionIndex: 0
 
 ::::{questionStatement}
-{fr}`Résoudre l'équation $\ds {{eqAff}} = 0$.`{en}`Solve the equation $\ds {{eqAff}} = 0$.`
+{fr}`Résoudre l'équation `{en}`Solve the equation `$\ds {{eqAff}} = 0${fr}`.`{en}`.`
 ::::
 
 ::::{questionHint}
@@ -67,7 +67,7 @@ globals()
 ::::
 
 ::::{detailedSolution}
-{fr}`Avec $\ds a = {{aAff}}$, $\ds b = {{bAff}}$, $\ds c = {{cAff}}$, le discriminant vaut :`{en}`With $\ds a = {{aAff}}$, $\ds b = {{bAff}}$, $\ds c = {{cAff}}$, the discriminant is:`
+{fr}`Avec `{en}`With `$\ds a = {{aAff}}${fr}`, `{en}`, `$\ds b = {{bAff}}${fr}`, `{en}`, `$\ds c = {{cAff}}${fr}`, le discriminant vaut :`{en}`, the discriminant is:`
 
 \begin{equation*}
 \ds \Delta &= ({{bAff}})^2 - 4 \times {{aAff}} \times {{cAff}} \\
@@ -83,7 +83,7 @@ globals()
 &= {{doubleRootAff}}.
 \end{equation*}
 
-{fr}`On retrouve la forme factorisée $\ds {{factoredAff}} = 0$, qui s'annule en $\ds x = {{doubleRootAff}}$. L'ensemble solution est $\ds \left\{ {{doubleRootAff}} \right\}$.`{en}`This matches the factored form $\ds {{factoredAff}} = 0$, which vanishes at $\ds x = {{doubleRootAff}}$. The solution set is $\ds \left\{ {{doubleRootAff}} \right\}$.`
+{fr}`On retrouve la forme factorisée `{en}`This matches the factored form `$\ds {{factoredAff}} = 0${fr}`, qui s'annule en `{en}`, which vanishes at `$\ds x = {{doubleRootAff}}${fr}`. L'ensemble solution est `{en}`. The solution set is `$\ds \left\{ {{doubleRootAff}} \right\}${fr}`.`{en}`.`
 ::::
 
 ::::{weightDistribution}
@@ -100,7 +100,7 @@ globals()
 :questionIndex: 1
 
 ::::{questionStatement}
-{fr}`Résoudre l'équation $\ds x({{alphaAff}}x - {{gammaAff}}) = 0$.`{en}`Solve the equation $\ds x({{alphaAff}}x - {{gammaAff}}) = 0$.`
+{fr}`Résoudre l'équation `{en}`Solve the equation `$\ds x({{alphaAff}}x - {{gammaAff}}) = 0${fr}`.`{en}`.`
 ::::
 
 ::::{questionHint}
@@ -114,7 +114,7 @@ globals()
 \ds x({{alphaAff}}x - {{gammaAff}}) = 0 \quad\Longleftrightarrow\quad x = 0 \quad\text{ou}\quad x = {{rAff}}.
 \end{equation*}
 
-{fr}`Le second facteur donne $\ds {{alphaAff}}x - {{gammaAff}} = 0$, soit $\ds x = {{rAff}}$. L'ensemble solution est $\ds \{0\,;\,{{rAff}}\}$.`{en}`The second factor gives $\ds {{alphaAff}}x - {{gammaAff}} = 0$, i.e. $\ds x = {{rAff}}$. The solution set is $\ds \{0\,;\,{{rAff}}\}$.`
+{fr}`Le second facteur donne `{en}`The second factor gives `$\ds {{alphaAff}}x - {{gammaAff}} = 0${fr}`, soit `{en}`, i.e. `$\ds x = {{rAff}}${fr}`. L'ensemble solution est `{en}`. The solution set is `$\ds \{0\,;\,{{rAff}}\}${fr}`.`{en}`.`
 ::::
 
 ::::{weightDistribution}

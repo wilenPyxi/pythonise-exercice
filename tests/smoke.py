@@ -542,6 +542,43 @@ check("bench --dry-run : reco produite", "best=" in bench_proc.stdout)
 check("bench --dry-run : recommended.json non modifié",
       "NON modifié" in bench_proc.stdout)
 
+# ── 3quinquies. Lint de rendu (lot pythonisation) + net d'échappement % ──────
+from app.validation import harness as _h  # noqa: E402
+from app.pipeline import postprocess as _pp  # noqa: E402
+
+check("lint rendu : $ inline déséquilibré → ROUGE",
+      any("déséquilibré" in e for e in _h.check_render_static("texte ${{ x }}, suite")))
+check("lint rendu : % nu → ROUGE",
+      any("%" in e for e in _h.check_render_static("Remise de 20% sur le prix.")))
+check("lint rendu : 0 faux positif sur $ équilibré + \\%",
+      _h.check_render_static("Prix ${{ p }}$ avec remise de 20\\%.") == [])
+check("lint rendu : % dans une métadonnée épargné",
+      _h.check_render_static(":originalSource: % Exercice 12") == [])
+check("net % : prose échappée, Python épargné",
+      (lambda o: "20\\% " in o and "5 % 2" in o)(
+          _pp.escape_percent("````{python}\nx = 5 % 2\n````\n\nRemise 20% ici.")[0]))
+check("net % : idempotent",
+      _pp.escape_percent(_pp.escape_percent("Remise 20% ici.")[0])[0]
+      == _pp.escape_percent("Remise 20% ici.")[0])
+check("check_injection_in_roles détecte {{ }} dans un rôle",
+      any("rôle" in e for e in _h.check_injection_in_roles("{fr}`Il y a {{n}} cas`{en}`x`")))
+# Filet : extrait l'injection HORS du rôle, symétrique, et le résultat n'a plus
+# aucune injection dans un rôle (bug n°1 du lot pythonisation).
+_role_src = "{fr}`Il y a {{nAff}} cas`{en}`There are {{nAff}} cases`"
+_role_out, _role_p = _pp.extract_injections_from_roles(_role_src)
+check("net rôles : injection extraite (0 résidu dans un rôle)",
+      _role_p and _h.check_injection_in_roles(_role_out) == [])
+check("net rôles : idempotent",
+      _pp.extract_injections_from_roles(_role_out)[0] == _role_out)
+check("net rôles : bail si unités FR/EN non alignées (laisse intact)",
+      _pp.extract_injections_from_roles("{fr}`a {{x}}`{en}`b {{y}}`")[0]
+      == "{fr}`a {{x}}`{en}`b {{y}}`")
+check("harnais : injection dans rôle → static_error (ROUGE dur)",
+      any("rôle" in e for e in _h.validate_text(
+          "`````{exercise}\n:id:\n\n````{python}\nnAff=1\nglobals()\n````\n\n"
+          ":::::{question}\n::::{questionStatement}\n{fr}`n = {{nAff}}`{en}`n = {{nAff}}`\n::::\n:::::\n`````",
+          seeds=5)["static_errors"]))
+
 # ── 4. Téléchargement ZIP (endpoint, sans LLM) ───────────────────────────────
 import io as _io  # noqa: E402
 import zipfile as _zipfile  # noqa: E402
