@@ -1,10 +1,10 @@
 {
-  "_comment": "Écrit par `python -m bench run`. manual_override=true pour protéger un choix manuel.",
+  "_comment": "CHOIX MANUEL (2026-07-07) : best=Opus 4.8 pour generate+audit (mode « Meilleur/max » = qualité maximale). manual_override=true → le banc ne réécrase plus. Repasser à false pour ré-adopter la reco automatique du banc.",
   "_bench_timestamp": "20260702-165614_consolidated_370220",
-  "manual_override": false,
+  "manual_override": true,
   "roles": {
     "generate": {
-      "best": "deepseek-v4-pro",
+      "best": "claude-opus-4-8",
       "cheap": "deepseek-v4-pro",
       "ladder": [
         "deepseek-v4-pro",
@@ -30,7 +30,7 @@
       ]
     },
     "audit": {
-      "best": "deepseek-v4-pro",
+      "best": "claude-opus-4-8",
       "cheap": "deepseek-v4-pro",
       "ladder": [
         "deepseek-v4-pro",
