@@ -28,6 +28,17 @@ from app.rag.notions import enrich_exercise_with_notions
 
 logger = logging.getLogger(__name__)
 
+# Garde-fou : dès que les embeddings OpenAI renvoient un quota épuisé (429), on
+# arrête d'appeler le RAG fonctions pour le reste de la session (sinon chaque job
+# repaie 3 retries + ~10 s pour un catalogue de toute façon vide). Réactivé au
+# prochain démarrage (une fois le compte OpenAI rechargé).
+_RAG_STATE = {"off": False}
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return "insufficient_quota" in s or "quota" in s or "429" in s
+
 
 def _rules_menu() -> str:
     return "\n".join(f"  - {rid} — {RULES_BY_ID[rid]['title']}" for rid in ALL_RULE_IDS)
@@ -90,7 +101,8 @@ def run_analysis_phase(content: str, model_idx: int,
             max_tokens=6096,
         )
         f_notions = pool.submit(enrich_exercise_with_notions, content, xlsx_path=NOTIONS_XLSX)
-        f_functions = pool.submit(
+        # RAG fonctions : sauté si les embeddings OpenAI sont déjà « à sec ».
+        f_functions = None if _RAG_STATE["off"] else pool.submit(
             retrieve_functions_context,
             exercise=content,
             embedding_model=RAG_EMBEDDING_MODEL,
@@ -106,11 +118,21 @@ def run_analysis_phase(content: str, model_idx: int,
             logger.warning("Retriever de notions en échec (%s) — contexte vide.", e)
             notions_ctx, lists_of_notions = "", ""
 
-        try:
-            functions_ctx = f_functions.result()["catalogue"]
-        except Exception as e:
-            logger.warning("RAG fonctions en échec (%s) — catalogue vide.", e)
-            functions_ctx = ""
+        if f_functions is None:
+            functions_ctx = ""      # RAG désactivé (quota OpenAI épuisé plus tôt)
+        else:
+            try:
+                functions_ctx = f_functions.result()["catalogue"]
+            except Exception as e:
+                functions_ctx = ""
+                if _is_quota_error(e):
+                    _RAG_STATE["off"] = True
+                    logger.warning(
+                        "RAG fonctions DÉSACTIVÉ pour la session : quota "
+                        "d'embeddings OpenAI épuisé (429). Recharge le compte "
+                        "OpenAI (platform.openai.com/billing) pour le réactiver.")
+                else:
+                    logger.warning("RAG fonctions en échec (%s) — catalogue vide.", e)
 
     analysis = _parse_analysis(raw_analysis, content)
     logger.info("Analyse : type=%s, %d variables, %d règles ciblées",

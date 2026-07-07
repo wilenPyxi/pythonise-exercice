@@ -744,6 +744,33 @@ questionHint : indice de DÉMARRAGE qui ne révèle jamais la réponse (cf. exem
 validés — tous en fournissent un) ; VERBATIM si la source en a un ; vide
 seulement si aucun indice pertinent.
 
+QUESTION QUALITATIVE (converge/diverge, monotone ou non, bornée, vrai/faux, « la
+limite existe-t-elle ? »…) → options TEXTUELLES bilingues {fr}`…`{en}`…`. Bonne
+réponse = la conclusion correcte ; distracteurs = conclusions ERRONÉES crédibles
+(« diverge vers +∞ », « croissante », « bornée par… »), en grille miroir. Pas de
+valeur numérique dans ces options.
+
+RÉPONSE = OBJET COMPLET : chaque option porte l'objet ENTIER visé par la question
+— l'intervalle complet, l'ensemble S = {…} complet, le polynôme entier, la valeur
+finale — reconstitué depuis les variables Python, JAMAIS un fragment (tout
+l'intérêt du QCM : on présente la réponse entière, plus rien à saisir).
+
+BILINGUE — NOTATIONS PROPRES À CHAQUE LANGUE (sinon la réponse s'affiche FAUX ;
+vaut pour l'énoncé, CHAQUE mcqAnswer — bonne réponse ET distracteurs — et la
+detailedSolution) :
+  • Intervalle : FR = crochets + point-virgule (borne exclue = crochet RETOURNÉ,
+    ex. `\\left] a \\,;\\, b \\right]`) ; EN = parenthèse/crochet + virgule
+    (ex. `(a, b]` ; ∞ toujours en parenthèse). → deux variables d'affichage
+    `interAffFr`/`interAffEn` (ou `pxs_Interval(...).print()` rendu par langue),
+    la bonne injectée dans CHAQUE rôle. JAMAIS la même notation dans les deux.
+  • Décimale : FR = virgule, EN = point. Un décimal affiché dans les DEUX langues
+    via UNE SEULE variable figée = BUG (il reste bloqué sur une langue). → deux
+    variables `valAffFr` (virgule) / `valAffEn` (point), la bonne dans chaque
+    rôle. (`\\py{}` est INTERDIT dans l'app : c'est la voie « une variable par
+    langue » qui règle le bilingue, pas `\\py{}`.)
+  • Entiers et coefficients LaTeX (`lc`/`pxsl_format_number`) : aucun séparateur
+    décimal → une seule variable, injectée telle quelle dans les deux langues.
+
 L'ÉNONCÉ NE DONNE JAMAIS LA RÉPONSE (l'énoncé définit, la question interroge).
 """  # noqa: E501 — texte normatif verbatim (valeur injectée telle quelle, accolades SIMPLES)
 
